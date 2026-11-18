@@ -8,7 +8,7 @@ import {
 
 export const LANES = [-2.5, 0, 2.5];
 export const CHUNK = 60; // metres of street per recycled block
-const NUM_CHUNKS = 6; // 360 m of street exists at any time
+const NUM_CHUNKS = 5; // 300 m of street exists at any time (the haze hides the rest)
 const SUN_SIDE = 1; // the sun is on the +x side, alleys there let light cut across the road
 
 export const SUN_DIR = new THREE.Vector3()
@@ -22,7 +22,7 @@ interface Chunk {
   boxes: THREE.Box3[]; // shade casters in chunk-local space
 }
 
-const KEEP = ['position', 'normal', 'uv'];
+const KEEP = ['position', 'normal', 'uv', 'color'];
 function clean(g: THREE.BufferGeometry) {
   const n = g.index ? g.toNonIndexed() : g;
   for (const k of Object.keys(n.attributes)) if (!KEEP.includes(k)) n.deleteAttribute(k);
@@ -30,10 +30,37 @@ function clean(g: THREE.BufferGeometry) {
   return n;
 }
 
+/** Stacks same-width canvas textures into one texture; returns per-entry UV v-ranges (flipY: v=1 is the top). */
+function atlas(textures: THREE.Texture[]) {
+  const imgs = textures.map((t) => t.image as HTMLCanvasElement);
+  const w = imgs[0].width, h = imgs.reduce((a, i) => a + i.height, 0);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d')!;
+  const regions: [number, number][] = [];
+  let y = 0;
+  for (const im of imgs) {
+    g.drawImage(im, 0, y, w, im.height);
+    regions.push([1 - (y + im.height - 1) / h, 1 - (y + 1) / h]); // 1px inset against bleeding
+    y += im.height;
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return { tex, regions };
+}
+const remapV = (g: THREE.BufferGeometry, r?: [number, number]) => {
+  if (!r) return g;
+  const uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setY(i, r[0] + uv.getY(i) * (r[1] - r[0]));
+  return g;
+};
+
 export class World {
   group = new THREE.Group();
   private chunks: Chunk[] = [];
-  private mats!: Record<string, any>;
+  mats!: Record<string, any>;
+  private noShadow = new Set<THREE.Material>();
   private props: Record<string, THREE.Object3D> = {};
   private ray = new THREE.Ray();
   private tmpBox = new THREE.Box3();
@@ -90,25 +117,38 @@ export class World {
       head: P({ color: '#fff', emissive: '#fff6e0', emissiveIntensity: 1.2 }),
       tail: P({ color: '#a00', emissive: '#ff1a0a', emissiveIntensity: 0.8 }),
       plate: P({ map: plateTexture(512), roughness: 0.4 }),
-      paints: ['#101418', '#e8e8e6', '#7a0f14', '#1f3a5f', '#9aa0a4', '#0d0d0d', '#c9b38a', '#2f4a3a', '#c7c9cc'].map((c) =>
-        new THREE.MeshPhysicalMaterial({ color: c, metalness: 0.55, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.05 })),
       trunk: P({ color: '#7a6650', roughness: 1 }),
       skirt: P({ color: '#6b5a3c', roughness: 1 }),
       frond: P({ map: frondTexture(rnd), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.8 }),
-      signs: Array.from({ length: 14 }, (_, i) => { const t = signTexture(i, rnd); return P({ map: t, emissiveMap: t, emissive: '#fff', emissiveIntensity: 0.06, roughness: 0.6 }); }),
-      ads: Array.from({ length: 4 }, (_, i) => { const t = adTexture(i, rnd); return P({ map: t, emissiveMap: t, emissive: '#fff', emissiveIntensity: 0.08, roughness: 0.5 }); }),
-      awnings: Array.from({ length: 4 }, (_, i) => P({ map: awningTexture(i), side: THREE.DoubleSide, roughness: 0.85 })),
-      graffiti: Array.from({ length: 8 }, (_, i) => decal(graffitiTexture(i, rnd))),
+      paint: new THREE.MeshPhysicalMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.05 }),
+      paints: ['#101418', '#e8e8e6', '#7a0f14', '#1f3a5f', '#9aa0a4', '#0d0d0d', '#c9b38a', '#2f4a3a', '#c7c9cc'].map((c) =>
+        new THREE.MeshPhysicalMaterial({ color: c, metalness: 0.55, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.05 })), // obstacle cars
+      paintColors: ['#101418', '#e8e8e6', '#7a0f14', '#1f3a5f', '#9aa0a4', '#0d0d0d', '#c9b38a', '#2f4a3a', '#c7c9cc'].map((c) => new THREE.Color(c)),
       grime: decal(grimeTexture()),
     };
+    // one texture sheet per decal family: ~30 materials become 4 per street block
+    const mk = (texs: THREE.Texture[], mat: (t: THREE.Texture) => THREE.Material) => { const a = atlas(texs); return { mat: mat(a.tex), regions: a.regions }; };
+    this.mats.signs = mk(Array.from({ length: 14 }, (_, i) => signTexture(i, rnd)), (t) => P({ map: t, emissiveMap: t, emissive: '#fff', emissiveIntensity: 0.06, roughness: 0.6 }));
+    this.mats.ads = mk(Array.from({ length: 4 }, (_, i) => adTexture(i, rnd)), (t) => P({ map: t, emissiveMap: t, emissive: '#fff', emissiveIntensity: 0.08, roughness: 0.5 }));
+    this.mats.awnings = mk(Array.from({ length: 4 }, (_, i) => awningTexture(i)), (t) => P({ map: t, side: THREE.DoubleSide, roughness: 0.85 }));
+    this.mats.graffiti = mk(Array.from({ length: 8 }, (_, i) => graffitiTexture(i, rnd)), (t) => decal(t));
+    // materials that never need to cast shadows (ground, paint, decals, glass)
+    this.noShadow = new Set<THREE.Material>([asp, pav, curb, this.mats.paintW, this.mats.grime, this.mats.signs.mat, this.mats.ads.mat, this.mats.graffiti.mat, this.mats.glass, this.mats.shop, this.mats.frame, this.mats.lamp]);
 
     onProgress(0.45, 'Street furniture');
     const gl = new GLTFLoader();
-    const ids = ['fire_hydrant', 'metal_trash_can', 'modular_street_seating', 'planter_box_01', 'potted_plant_02', 'water_manhole_cover'];
+    const ids = ['fire_hydrant', 'metal_trash_can', 'planter_box_01', 'potted_plant_02', 'water_manhole_cover'];
     await Promise.all(ids.map(async (id) => {
       const g = await gl.loadAsync(`${ASSET}/models/${id}/${id}.gltf`);
-      g.scene.traverse((o) => { if ((o as THREE.Mesh).isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-      this.props[id] = g.scene;
+      // these Poly Haven models ship clean + aged/rusty copies side by side: keep the clean one, centred
+      const drop: THREE.Object3D[] = [];
+      g.scene.traverse((o) => { if (/_aged|_rust/.test(o.name)) drop.push(o); });
+      drop.forEach((o) => o.parent?.remove(o));
+      const box = new THREE.Box3().setFromObject(g.scene), c = box.getCenter(new THREE.Vector3());
+      g.scene.position.x -= c.x; g.scene.position.z -= c.z;
+      const wrap = new THREE.Group(); wrap.add(g.scene);
+      wrap.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) this.noShadow.add(m.material as THREE.Material); });
+      this.props[id] = wrap;
     }));
 
     onProgress(0.6, 'Palms & buildings');
@@ -168,8 +208,8 @@ export class World {
       }
       add(g, mat, x, y, z);
     };
-    const facePlane = (w: number, h: number, mat: THREE.Material, x: number, y: number, z: number, s: number) =>
-      add(new THREE.PlaneGeometry(w, h), mat, x, y, z, 0, -s * Math.PI / 2);
+    const facePlane = (w: number, h: number, mat: THREE.Material, x: number, y: number, z: number, s: number, region?: [number, number]) =>
+      add(remapV(new THREE.PlaneGeometry(w, h), region), mat, x, y, z, 0, -s * Math.PI / 2);
 
     const Lz = -CHUNK / 2; // chunk spans z in [-CHUNK, 0]
     // road, lane paint, sidewalks, curbs
@@ -200,17 +240,17 @@ export class World {
         wbox(0.12, 0.2, w - 1.3, M.frame, fx - s * 0.02, 3.25, z - w / 2, 1);
         // sign + backing
         const sw = Math.min(w - 2, 8);
-        facePlane(sw, 1.5, M.signs[Math.floor(rnd() * M.signs.length)], fx - s * 0.18, 4.25, z - w / 2, s);
+        facePlane(sw, 1.5, M.signs.mat, fx - s * 0.18, 4.25, z - w / 2, s, M.signs.regions[Math.floor(rnd() * 14)]);
         wbox(0.25, 1.7, sw + 0.2, M.dark, fx - s * 0.06, 4.25, z - w / 2, 1);
         // awning
         if (rnd() < 0.7) {
           const ag = new THREE.PlaneGeometry(Math.min(w - 1.5, 9), 1.6);
           ag.rotateX(-0.55); ag.rotateY(-s * Math.PI / 2);
-          add(ag, M.awnings[Math.floor(rnd() * 4)], fx - s * 0.7, 3.35, z - w / 2);
+          add(remapV(ag, M.awnings.regions[Math.floor(rnd() * 4)]), M.awnings.mat, fx - s * 0.7, 3.35, z - w / 2);
         }
         // grime + graffiti
         facePlane(w, 3.2, M.grime, fx - s * 0.01, 1.6, z - w / 2, s);
-        if (rnd() < 0.45) { const gw = 3 + rnd() * 2; facePlane(gw, gw * 0.5, M.graffiti[Math.floor(rnd() * 8)], fx - s * 0.025, 1.3, z - 0.5 - gw / 2 - rnd() * Math.max(0.1, w - gw - 1), s); }
+        if (rnd() < 0.45) { const gw = 3 + rnd() * 2; facePlane(gw, gw * 0.5, M.graffiti.mat, fx - s * 0.025, 1.3, z - 0.5 - gw / 2 - rnd() * Math.max(0.1, w - gw - 1), s, M.graffiti.regions[Math.floor(rnd() * 8)]); }
         // upper windows, sills, AC units
         for (let f = 1; f < floors; f++) for (let k = 0; k < Math.floor(w / 3); k++) {
           const wz = z - 1.6 - k * 3, wy = f * 3.4 + 2.0;
@@ -238,7 +278,7 @@ export class World {
         if (rnd() < 0.6) wbox(1.1, 0.8, 0.9, M.ac, x + (rnd() - 0.5) * 6, h + 0.4, z - 1.5 - rnd() * Math.max(0.1, w - 3), 1);
         if (rnd() < 0.3 && h < 11) {
           const bw = Math.min(w - 1, 9);
-          facePlane(bw, bw * 0.42, M.ads[Math.floor(rnd() * 4)], fx + s * 1.0, h + 1.2 + bw * 0.21, z - w / 2, s);
+          facePlane(bw, bw * 0.42, M.ads.mat, fx + s * 1.0, h + 1.2 + bw * 0.21, z - w / 2, s, M.ads.regions[Math.floor(rnd() * 4)]);
           wbox(0.3, bw * 0.42 + 0.3, bw + 0.3, M.dark, fx + s * 1.15, h + 1.2 + bw * 0.21, z - w / 2, 1);
           for (const q of [-bw / 3, bw / 3]) wbox(0.2, 1.3, 0.2, M.iron, fx + s * 1.3, h + 0.6, z - w / 2 + q, 1);
         }
@@ -257,31 +297,38 @@ export class World {
     // palms
     for (let z = -2; z > -CHUNK; z -= 12) for (const s of [-1, 1]) this.palm(add, s * 9.0, z - (s > 0 ? 6 : 0), 14 + rnd() * 8, rnd);
     // parked cars
-    for (let z = -4; z > -CHUNK + 3; z -= 6.5) for (const s of [-1, 1]) if (rnd() < 0.75) this.car(add, s * 6.1, z - rnd() * 1.2, s > 0 ? -Math.PI / 2 : Math.PI / 2, M.paints[Math.floor(rnd() * M.paints.length)], rnd() < 0.3);
+    for (let z = -4; z > -CHUNK + 3; z -= 6.5) for (const s of [-1, 1]) if (rnd() < 0.75) this.car(add, s * 6.1, z - rnd() * 1.2, s > 0 ? -Math.PI / 2 : Math.PI / 2, M.paintColors[Math.floor(rnd() * M.paintColors.length)], rnd() < 0.3);
+
+    // real props (Poly Haven, simplified): baked into the block's batches so they cost no extra draw calls
+    const put = (id: string, x: number, y: number, z: number, ry: number) => {
+      const root = this.props[id];
+      const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ry, 0)), new THREE.Vector3(1, 1, 1));
+      root.updateMatrixWorld(true);
+      root.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const g = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld).applyMatrix4(m);
+        const mat = mesh.material as THREE.Material;
+        if (!batch.has(mat)) batch.set(mat, []);
+        batch.get(mat)!.push(clean(g));
+      });
+    };
+    for (let z = -6; z > -CHUNK; z -= 17) {
+      const s = rnd() < 0.5 ? -1 : 1;
+      put('metal_trash_can', s * 8.85, 0.15, z, rnd() * 6);
+      put('fire_hydrant', -s * 8.55, 0.15, z - 5, rnd() * 6);
+      if (rnd() < 0.7) put(rnd() < 0.5 ? 'potted_plant_02' : 'planter_box_01', s * 12.3, 0.15, z - 3, rnd() * 6);
+    }
+    for (let z = -8; z > -CHUNK; z -= 23) put('water_manhole_cover', (rnd() - 0.5) * 5, 0.004, z, rnd() * 6);
 
     for (const [mat, geos] of batch) {
       const mesh = new THREE.Mesh(mergeGeometries(geos, false), mat);
-      mesh.castShadow = !(mat as THREE.MeshStandardMaterial).transparent;
+      mesh.castShadow = !this.noShadow.has(mat) && !(mat as THREE.MeshStandardMaterial).transparent;
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
       mesh.updateMatrix();
       group.add(mesh);
     }
-    // real props (Poly Haven)
-    const put = (id: string, x: number, z: number, ry: number) => {
-      const o = this.props[id].clone();
-      o.position.set(x, 0.15, z);
-      o.rotation.y = ry;
-      group.add(o);
-    };
-    for (let z = -6; z > -CHUNK; z -= 17) {
-      const s = rnd() < 0.5 ? -1 : 1;
-      put('metal_trash_can', s * 8.85, z, rnd() * 6);
-      put('fire_hydrant', -s * 8.55, z - 5, rnd() * 6);
-      if (rnd() < 0.6) put('modular_street_seating', s * 11.6, z - 9, s > 0 ? -Math.PI / 2 : Math.PI / 2);
-      if (rnd() < 0.7) put(rnd() < 0.5 ? 'potted_plant_02' : 'planter_box_01', s * 12.3, z - 3, rnd() * 6);
-    }
-    for (let z = -8; z > -CHUNK; z -= 23) { const o = this.props.water_manhole_cover.clone(); o.position.set((rnd() - 0.5) * 5, 0.004, z); group.add(o); }
     return { group, boxes };
   }
 
@@ -307,10 +354,18 @@ export class World {
   }
 
   private car(add: (g: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, rx?: number, ry?: number, rz?: number) => void,
-    x: number, z: number, ry: number, paint: THREE.Material, suv: boolean) {
+    x: number, z: number, ry: number, color: THREE.Color, suv: boolean) {
     const M = this.mats;
-    const parts = buildCarParts(M, paint, suv);
-    for (const { geo, mat } of parts) { geo.rotateY(ry); add(geo, mat, x, 0, z); }
+    const parts = buildCarParts(M, M.paint, suv);
+    for (const { geo, mat } of parts) {
+      if (mat === M.paint) { // shared paint material: colour per vertex
+        const g = geo.index ? geo.toNonIndexed() : geo, n = g.attributes.position.count, c = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { c[i * 3] = color.r; c[i * 3 + 1] = color.g; c[i * 3 + 2] = color.b; }
+        g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+        g.rotateY(ry); add(g, mat, x, 0, z); continue;
+      }
+      geo.rotateY(ry); add(geo, mat, x, 0, z);
+    }
   }
 
   private buildBackdrop() {
@@ -336,7 +391,7 @@ export function buildCarParts(M: Record<string, any>, paint: THREE.Material, suv
     geo.rotateX(rx); geo.rotateY(ry); geo.rotateZ(rz); geo.translate(x, y, z); out.push({ geo, mat });
   };
   const len = suv ? 4.8 : 4.7, hb = suv ? 0.85 : 0.6, wid = 1.86, ch = suv ? 0.78 : 0.6, cl = suv ? 3.1 : 2.7;
-  push(new RoundedBoxGeometry(len, hb, wid, 3, 0.22), paint, 0, 0.38 + hb / 2, 0);
+  push(new RoundedBoxGeometry(len, hb, wid, 2, 0.22), paint, 0, 0.38 + hb / 2, 0);
   const cx0 = suv ? -0.35 : -0.25, cy0 = 0.38 + hb - 0.04, fr = suv ? 0.35 : 0.55, rr = suv ? 0.15 : 0.4;
   const gs = new THREE.Shape();
   gs.moveTo(-cl / 2 - 0.05, 0); gs.lineTo(cl / 2 + 0.1, 0); gs.lineTo(cl / 2 - fr, ch); gs.lineTo(-cl / 2 + rr, ch); gs.lineTo(-cl / 2 - 0.05, 0);
@@ -349,8 +404,8 @@ export function buildCarParts(M: Record<string, any>, paint: THREE.Material, suv
     push(new THREE.BoxGeometry(len * 0.86, 0.025, 0.012), M.chrome, 0, cy0 + 0.02, sz * (wid / 2 + 0.003));
     push(new RoundedBoxGeometry(0.16, 0.11, 0.12, 2, 0.03), paint, cx0 + cl / 2 - 0.15, cy0 + 0.12, sz * (wid / 2 + 0.08));
     for (const wx of [-len * 0.31, len * 0.31]) {
-      push(new THREE.CylinderGeometry(0.37, 0.37, 0.27, 20), M.tire, wx, 0.37, sz * 0.86, Math.PI / 2);
-      push(new THREE.CylinderGeometry(0.24, 0.24, 0.29, 14), M.rim, wx, 0.37, sz * 0.86, Math.PI / 2);
+      push(new THREE.CylinderGeometry(0.37, 0.37, 0.27, 12), M.tire, wx, 0.37, sz * 0.86, Math.PI / 2);
+      push(new THREE.CylinderGeometry(0.24, 0.24, 0.29, 10), M.rim, wx, 0.37, sz * 0.86, Math.PI / 2);
     }
   }
   push(new THREE.BoxGeometry(0.03, 0.2, 1.0), M.dark, len / 2 + 0.005, 0.38 + hb * 0.45, 0);
