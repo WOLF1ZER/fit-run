@@ -11,7 +11,9 @@ The run ends when stamina hits zero (one Second Wind per run).
 
 ## Assets
 - Photo-scanned textures and street props: [Poly Haven](https://polyhaven.com) (CC0)
-- Characters: built with [ara3d](https://www.npmjs.com/package/ara3d) from MakeHuman data (CC0);
+- Player: the owner's own rigged character model (Mixamo rig with Idle/Run/Jump/Walk), textures
+  re-encoded to 2K JPEG and the mesh simplified with meshoptimizer (36 MB → 8.6 MB)
+- Joggers: built with [ara3d](https://www.npmjs.com/package/ara3d) from MakeHuman data (CC0);
   running animations from the CMU Graphics Lab Motion Capture Database
   ("The data used in this project was obtained from mocap.cs.cmu.edu.
   The database was created with funding from NSF EIA-0196217.")
