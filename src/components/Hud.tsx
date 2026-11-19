@@ -55,8 +55,9 @@ export function Hud({ state: s, onStart, onResume }: { state: HudState; onStart:
         <ul className="howto">
           <li><b>←  →</b> change lane</li>
           <li><b>↑</b> jump · <b>↓</b> slide</li>
-          <li>🥤 shakes grow you · 💧 water · 🍌 energy · 🍔 slows you</li>
+          <li>🥤 shakes grow you · 💧 water · 🍌 energy · 🍔🥤 junk drains you</li>
           <li>☀ sun dries you out — run in the shade</li>
+          <li>💥 a crash costs ⅓ of your stamina · 9 shakes in a row = BEAST</li>
         </ul>
         {install && <button className="ghost" onPointerDown={stop} onClick={() => install.prompt()}>Install app</button>}
       </div>
@@ -81,8 +82,8 @@ export function Hud({ state: s, onStart, onResume }: { state: HudState; onStart:
           <span>❤ {s.bpm} BPM</span>
           <span className={s.inShade ? 'shade' : 'sun'}>{s.inShade ? '🌴 SHADE' : '☀ SUN'}</span>
         </div>
-        {s.beast > 0 && <div className="beast">BEAST MODE <small>{s.beast.toFixed(1)}s · SMASH EVERYTHING</small></div>}
-        {s.heavy > 0 && <div className="heavy">🍔 HEAVY {s.heavy.toFixed(1)}s</div>}
+        {s.phase === 'running' && s.beast > 0 && <div className="beast">BEAST MODE <small>{s.beast.toFixed(1)}s · SMASH EVERYTHING</small></div>}
+        {s.phase === 'running' && s.heavy > 0 && <div className="heavy">🍔 HEAVY {s.heavy.toFixed(1)}s</div>}
         {s.hint && <div className="hint">{s.hint}</div>}
         {s.pops.map((p) => (
           <div key={p.id} className={`pop ${p.big ? 'big' : ''}`} style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, color: p.color }}>{p.text}</div>

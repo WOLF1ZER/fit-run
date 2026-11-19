@@ -11,6 +11,10 @@ import { ASSET } from './materials';
 
 // ---- tuning ----
 const BEAST_TIME = 8;
+const CRASH_COST = 34; // three crashes from full stamina end the run
+const INVULN_TIME = 1.5;
+const BEAST_STREAK = 9; // shakes in a row without a crash or junk food
+const LANE_CHANGE_TIME = 0.42; // seconds a player needs to see and dodge into the next lane
 const SECOND_WIND_TIME = 3.2;
 const SECOND_WIND_TAPS = 12;
 const xpForLevel = (lvl: number) => 3 + lvl; // shakes needed to go from lvl to lvl+1
@@ -31,6 +35,7 @@ export class Engine {
   private dpr: number;
   private maxDpr: number;
   private fpsAcc = { t: 0, n: 0 };
+  private frame = 0;
 
   // run state
   private t = 0;
@@ -47,6 +52,8 @@ export class Engine {
   private heavy = 0;
   private bonus = 0;
   private nextRow = 30;
+  private safeLane = 1;
+  private lastGap = 20;
   private shakeCam = 0;
   private inShade = true;
   private secondWindUsed = false;
@@ -70,6 +77,7 @@ export class Engine {
     this.renderer.setPixelRatio(this.dpr);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.autoUpdate = false; // refreshed every other frame in loop()
     this.renderer.toneMapping = THREE.AgXToneMapping;
     this.renderer.toneMappingExposure = 0.88;
     this.resize();
@@ -121,6 +129,7 @@ export class Engine {
     this.camera.position.set(0, 2.3, 3.3);
     this.camera.lookAt(0, 1.2, -9);
     this.renderer.compile(this.scene, this.camera);
+    this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
     this.ents.clear();
     step(1, 'Ready');
@@ -152,7 +161,7 @@ export class Engine {
     this.startLevel = 1 + Math.min(3, Math.floor(this.profile.totalShakes / 40));
     Object.assign(this, {
       t: 0, distance: 0, speed: 9, stamina: 100, hydration: 100, level: this.startLevel, xp: 0, shakes: 0, shakeStreak: 0, combo: 0,
-      beast: 0, heavy: 0, bonus: 0, nextRow: 28, secondWindUsed: false, pops: [],
+      beast: 0, heavy: 0, bonus: 0, nextRow: 28, secondWindUsed: false, pops: [], safeLane: 1, lastGap: 20,
     });
     this.ents.clear();
     this.player.reset();
@@ -191,7 +200,8 @@ export class Engine {
         this.swTaps++;
         sfx.tap();
         if (this.swTaps >= SECOND_WIND_TAPS) {
-          this.stamina = 35;
+          this.stamina = Math.max(this.stamina, 35);
+          this.player.invuln = INVULN_TIME;
           this.secondWindUsed = true;
           this.player.startRunning();
           this.popup('SECOND WIND!', '#7dffb5', true);
@@ -230,11 +240,13 @@ export class Engine {
   private collect(kind: ItemKind) {
     if (kind === 'burger' || kind === 'soda') {
       sfx.junk();
+      // junk food costs energy and makes you heavy for a few seconds
+      const loss = kind === 'burger' ? 12 : 8;
       this.heavy = kind === 'burger' ? 5 : 4;
-      if (kind === 'burger') this.stamina = Math.min(100, this.stamina + 6); else this.hydration = Math.min(100, this.hydration + 4);
+      this.stamina = Math.max(0, this.stamina - loss);
       this.combo = 0;
       this.shakeStreak = 0;
-      this.popup(kind === 'burger' ? 'JUNK FOOD · HEAVY' : 'SUGAR CRASH', '#ff5a5a');
+      this.popup(kind === 'burger' ? `JUNK FOOD −${loss} ⚡` : `SUGAR CRASH −${loss} ⚡`, '#ff5a5a');
       return;
     }
     this.combo++;
@@ -244,7 +256,8 @@ export class Engine {
       this.shakes++;
       this.shakeStreak++;
       this.xp++;
-      this.popup('+1 💪', '#ff8a5a');
+      this.stamina = Math.min(100, this.stamina + 5);
+      this.popup('+1 💪 +5 ⚡', '#ff8a5a');
       if (this.xp >= xpForLevel(this.level)) {
         this.xp = 0;
         this.level++;
@@ -253,7 +266,7 @@ export class Engine {
         this.popup(`LEVEL ${this.level}`, '#ffd23f', true, 0.5, 0.3);
         hud.set({ levelUp: performance.now() });
       }
-      if (this.shakeStreak >= 3 && this.beast <= 0) {
+      if (this.shakeStreak >= BEAST_STREAK && this.beast <= 0) {
         this.shakeStreak = 0;
         this.beast = BEAST_TIME;
         this.player.setGrowth(BEAST_K);
@@ -271,36 +284,56 @@ export class Engine {
     if (label && (this.combo === 5 || this.combo === 10 || this.combo === 20 || this.combo % 35 === 0)) this.popup(`×${this.combo} ${label}`, '#ffd84a', true, 0.5, 0.24);
   }
 
-  private spawnRow(zWorld: number) {
-    const d = this.distance;
-    const r = Math.random;
-    // which obstacles are unlocked so far
-    const pool: ObstacleKind[] = ['barrier', 'car'];
-    if (d > 150) pool.push('banner');
-    if (d > 300) pool.push('jogger');
-    const nObs = d < 200 ? 1 : r() < Math.min(0.55, d / 3000) ? 2 : 1;
-    const lanes = [0, 1, 2].sort(() => r() - 0.5);
-    const blocked: number[] = [];
-    for (let i = 0; i < nObs; i++) {
-      const lane = lanes[i];
-      let kind = pool[Math.floor(r() * pool.length)];
-      // two blockers: at least one must be passable by jumping or sliding
-      if (i === 1 && (kind === 'car' || kind === 'jogger')) kind = r() < 0.5 ? 'barrier' : 'banner';
+  /**
+   * One row of obstacles. Fairness rules:
+   *  - there is always a "safe lane" that is empty or passable by jumping/sliding,
+   *  - the safe lane moves at most one lane per row, and only if the gap gives enough time to switch,
+   *  - never three solid blockers; joggers jog on the spot so they never drift into another row.
+   */
+  private spawnRow(zWorld: number, gap: number) {
+    const d = this.distance, r = Math.random;
+    const canShift = gap / Math.max(this.speed, 8) >= LANE_CHANGE_TIME;
+    if (canShift && r() < 0.6) this.safeLane = Math.max(0, Math.min(2, this.safeLane + (r() < 0.5 ? -1 : 1)));
+    const solid: ObstacleKind[] = d > 300 ? ['car', 'car', 'jogger'] : ['car'];
+    const passable: ObstacleKind[] = d > 150 ? ['barrier', 'banner'] : ['barrier'];
+    const difficulty = Math.min(1, d / 2500);
+    for (let lane = 0; lane < 3; lane++) {
+      if (lane === this.safeLane) {
+        // the safe lane sometimes needs a jump or a slide (never a solid blocker)
+        if (d > 250 && r() < 0.15 + 0.25 * difficulty) this.ents.spawnObstacle(passable[Math.floor(r() * passable.length)], lane, zWorld);
+        continue;
+      }
+      if (r() > 0.45 + 0.45 * difficulty) continue; // leave this lane open too
+      const kind = r() < 0.55 + 0.2 * difficulty ? solid[Math.floor(r() * solid.length)] : passable[Math.floor(r() * passable.length)];
       this.ents.spawnObstacle(kind, lane, zWorld - (kind === 'car' ? 2.4 : 0));
-      blocked.push(lane);
     }
-    // pickups in a free lane, as a short line
-    const free = [0, 1, 2].filter((l) => !blocked.includes(l));
-    if (free.length && r() < 0.9) {
-      const lane = free[Math.floor(r() * free.length)];
+    // pickups follow the safe lane, just past the row (so collecting them never forces a crash)
+    if (r() < 0.85) {
       const roll = r();
       const needWater = this.hydration < 45, needFood = this.stamina < 45;
-      let kind: ItemKind = roll < 0.42 ? 'shake' : roll < 0.62 ? 'water' : roll < 0.8 ? 'banana' : roll < 0.9 ? 'burger' : 'soda';
+      let kind: ItemKind = roll < 0.45 ? 'shake' : roll < 0.63 ? 'water' : roll < 0.8 ? 'banana' : roll < 0.91 ? 'burger' : 'soda';
       if (needWater && r() < 0.4) kind = 'water';
       if (needFood && r() < 0.4) kind = 'banana';
-      const n = kind === 'shake' ? 3 : 1;
-      for (let k = 0; k < n; k++) this.ents.spawnItem(kind, lane, zWorld + 6 + k * 2.6);
+      const n = kind === 'shake' ? 3 : 1, room = Math.max(1, Math.floor((gap - 6) / 2.4));
+      for (let k = 0; k < Math.min(n, room); k++) this.ents.spawnItem(kind, this.safeLane, zWorld - 2.5 - k * 2.4);
     }
+  }
+
+  private crash() {
+    this.stamina = Math.max(0, this.stamina - CRASH_COST);
+    this.combo = 0; this.shakeStreak = 0;
+    this.player.hit(); this.player.invuln = INVULN_TIME;
+    sfx.hit();
+    this.shakeCam = 0.45;
+    this.popup(`CRASH −${CRASH_COST} ⚡`, '#ff4d4d', this.stamina < CRASH_COST);
+  }
+
+  private fail() {
+    if (!this.secondWindUsed) {
+      this.swTime = SECOND_WIND_TIME; this.swTaps = 0;
+      this.player.idle();
+      hud.set({ phase: 'secondwind', secondWindNeed: SECOND_WIND_TAPS, secondWindTaps: 0, secondWindTime: SECOND_WIND_TIME });
+    } else this.gameOver();
   }
 
   private step(dt: number) {
@@ -349,9 +382,11 @@ export class Engine {
 
     // spawning ahead
     while (this.nextRow < this.distance + 140) {
-      this.spawnRow(-(this.nextRow - this.distance));
-      const gap = Math.max(11, 22 - this.distance / 400);
-      this.nextRow += gap + Math.random() * 6;
+      this.spawnRow(-(this.nextRow - this.distance), this.lastGap);
+      // gaps shrink with distance but never below what the current speed needs to react and switch lanes
+      const minGap = Math.max(9, this.speed * (LANE_CHANGE_TIME + 0.35) + 4.8);
+      this.lastGap = Math.max(minGap, 24 - this.distance / 300) + Math.random() * 5;
+      this.nextRow += this.lastGap;
     }
 
     // collisions
@@ -376,6 +411,7 @@ export class Engine {
       if (o.kind === 'banner') blocks = pb.y1 > 1.25; // slide under it
       if (!blocks) continue;
       o.hit = true;
+      if (this.player.invuln > 0) continue;
       if (this.beast > 0) {
         o.fly = new THREE.Vector3((Math.random() - 0.5) * 6, 9, -14);
         o.spinFly = 6;
@@ -383,11 +419,7 @@ export class Engine {
         this.shakeCam = 0.25;
         continue;
       }
-      this.stamina = Math.max(0, this.stamina - 25);
-      this.combo = 0; this.shakeStreak = 0;
-      this.player.hit(); sfx.hit();
-      this.shakeCam = 0.45;
-      this.popup('OUCH −25 ⚡', '#ff4d4d');
+      this.crash();
     }
 
     // heartbeat when low
@@ -396,14 +428,8 @@ export class Engine {
       if (this.beatTimer <= 0) { sfx.heartbeat(); this.beatTimer = 0.55 + this.stamina / 50; }
     }
 
-    // out of stamina → Second Wind once, then game over
-    if (this.stamina <= 0) {
-      if (!this.secondWindUsed) {
-        this.swTime = SECOND_WIND_TIME; this.swTaps = 0;
-        this.player.idle();
-        hud.set({ phase: 'secondwind', secondWindNeed: SECOND_WIND_TAPS, secondWindTaps: 0, secondWindTime: SECOND_WIND_TIME });
-      } else this.gameOver();
-    }
+    // out of stamina (3 crashes, junk food, exhaustion) → Second Wind once, then game over
+    if (this.stamina <= 0) this.fail();
 
     // camera follows from behind and above, wider at speed
     const cx = this.player.x * 0.65 + 0.25, shake = this.shakeCam > 0 ? (Math.random() - 0.5) * this.shakeCam : 0;
@@ -443,6 +469,8 @@ export class Engine {
     const dt = Math.min(0.05, this.clock.getDelta());
     if (hud.get().phase !== 'paused') this.step(dt);
     this.adaptQuality(dt);
+    // shadows at half the frame rate: one less full scene pass every other frame
+    if ((++this.frame & 1) === 0) this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
   };
 
@@ -450,6 +478,7 @@ export class Engine {
   simulate(seconds: number) {
     const dt = 1 / 30;
     for (let t = 0; t < seconds; t += dt) if (hud.get().phase !== 'paused') this.step(dt);
+    this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
     return this.debugState();
   }

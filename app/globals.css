@@ -70,3 +70,4 @@ h2 { margin: 0; font-size: clamp(30px, 7vw, 52px); font-weight: 900; }
   .row-label { font-size: 10px; }
   .stats { grid-template-columns: repeat(2, 1fr); }
 }
+

@@ -14,6 +14,7 @@ export default function Game() {
     const engine = new Engine(canvasRef.current!);
     engineRef.current = engine;
     (window as any).__fitrun = engine; // handy for debugging / automated tests
+    (window as any).__fitrunHud = hud;
     engine.load().catch((e) => {
       console.error(e);
       hud.set({ loadLabel: 'Could not load the game. Please reload.' });

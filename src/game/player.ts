@@ -55,6 +55,29 @@ export class Player {
       this.actions.Jump.clampWhenFinished = true;
     }
     this.play('Idle', 0);
+    // rest-pose height of each foot joint above the soles: used to keep the feet on the road
+    this.model.updateMatrixWorld(true);
+    for (const n of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) {
+      const b = this.model.getObjectByName('mixamorig' + n) ?? this.model.getObjectByName('mixamorig:' + n);
+      if (b) this.feet.push({ bone: b, rest: b.getWorldPosition(this.tmp).y });
+    }
+  }
+
+  private feet: { bone: THREE.Object3D; rest: number }[] = [];
+  private tmp = new THREE.Vector3();
+  private lift = 0;
+  invuln = 0;
+
+  /** Lifts the model just enough that no foot joint dips below its resting height above the road. */
+  private keepFeetOnRoad(dt: number) {
+    if (!this.feet.length) return;
+    this.model.position.y -= this.lift; // measure without last frame's lift
+    this.root.updateMatrixWorld(true);
+    let below = 0;
+    for (const f of this.feet) below = Math.max(below, f.rest - (f.bone.getWorldPosition(this.tmp).y - this.root.position.y));
+    // snap up immediately, ease back down
+    this.lift = below > this.lift ? below : this.lift + (below - this.lift) * Math.min(1, dt * 10);
+    this.model.position.y += this.lift;
   }
 
   private play(name: string, fade = 0.2, timeScale = 1) {
@@ -76,6 +99,9 @@ export class Player {
     this.sliding = 0;
     this.stumble = 0;
     this.tilt = 0;
+    this.lift = 0;
+    this.invuln = 0;
+    this.model.visible = true;
     this.heading = Math.PI;
     this.setGrowth(0, true);
     this.root.position.set(0, 0, 0);
@@ -156,6 +182,10 @@ export class Player {
     // growth eases in (applied after the animation so nothing overrides it)
     if (Math.abs(this.growth - this.growthTarget) > 0.001) this.growth += (this.growthTarget - this.growth) * Math.min(1, dt * 3);
     applyGrowth(this.model, this.growth);
+    this.keepFeetOnRoad(dt);
+    // blink while invulnerable after a crash
+    this.invuln = Math.max(0, this.invuln - dt);
+    this.model.visible = this.invuln <= 0 || Math.floor(this.invuln * 12) % 2 === 0;
   }
 
   /** Simple hit volume: lane x, vertical span. */
