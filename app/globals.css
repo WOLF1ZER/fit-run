@@ -123,3 +123,5 @@ h2 { margin: 0; font-size: clamp(30px, 7vw, 52px); font-weight: 900; }
 
 .bar .fit.max { background: linear-gradient(90deg, #ffd23f, #fff2a8, #ffd23f); background-size: 200% 100%; animation: shine 1.6s linear infinite; box-shadow: 0 0 12px rgba(255,210,63,.8); }
 @keyframes shine { from { background-position: 200% 0; } to { background-position: 0 0; } }
+
+.offline-ok { margin: 0; font-size: 12px; letter-spacing: .1em; color: #8fe3b0; font-weight: 700; }

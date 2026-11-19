@@ -87,6 +87,13 @@ export function Hud({ state: s, actions }: { state: HudState; actions: HudAction
     return () => window.removeEventListener('beforeinstallprompt', h);
   }, []);
   useEffect(() => { if (s.phase !== 'paused' && s.phase !== 'menu') setShowSettings(false); }, [s.phase]);
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    const check = () => { try { setOffline(localStorage.getItem('fitrun.offline') === '1'); } catch { /* private mode */ } };
+    check();
+    window.addEventListener('fitrun-offline-ready', check);
+    return () => window.removeEventListener('fitrun-offline-ready', check);
+  }, []);
 
   if (s.phase === 'error') {
     return (
@@ -122,6 +129,7 @@ export function Hud({ state: s, actions }: { state: HudState; actions: HudAction
           <li>☀ sun dries you out — run in the shade</li>
           <li>💥 a crash costs ⅓ of your stamina · 9 shakes in a row = BEAST</li>
         </ul>
+        {offline && <p className="offline-ok">✓ Ready to play offline</p>}
         {install && <button className="ghost" onPointerDown={stop} onClick={() => install.prompt()}>Install app</button>}
         {showSettings && <Sheet title="Settings" onClose={() => setShowSettings(false)}><Settings /></Sheet>}
       </div>
