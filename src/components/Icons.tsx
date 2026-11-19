@@ -16,3 +16,9 @@ export const CloseIcon = ({ size = 18 }: P) => svg(size, <><path d="M6 6l12 12" 
 export const MusicIcon = ({ size = 18 }: P) => svg(size, <><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></>);
 export const SoundIcon = ({ size = 18 }: P) => svg(size, <><path d="M11 5 6 9H2v6h4l5 4V5z" fill="currentColor" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M19 5a10 10 0 0 1 0 14" /></>);
 export const VibrateIcon = ({ size = 18 }: P) => svg(size, <><rect x="7" y="4" width="10" height="16" rx="2" /><path d="M3 9v6" /><path d="M21 9v6" /></>);
+export const ShareIcon = ({ size = 20 }: P) => svg(size, <><path d="M12 3v12" /><path d="M8 7l4-4 4 4" /><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1" /></>);
+export const AddBoxIcon = ({ size = 20 }: P) => svg(size, <><rect x="3.5" y="3.5" width="17" height="17" rx="4" /><path d="M12 8v8" /><path d="M8 12h8" /></>);
+export const DownloadIcon = ({ size = 20 }: P) => svg(size, <><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 20h14" /></>);
+export const DotsIcon = ({ size = 20 }: P) => svg(size, <><circle cx="12" cy="5" r="1.4" fill="currentColor" /><circle cx="12" cy="12" r="1.4" fill="currentColor" /><circle cx="12" cy="19" r="1.4" fill="currentColor" /></>);
+export const CheckIcon = ({ size = 20 }: P) => svg(size, <path d="M5 12.5l4.5 4.5L19 7.5" />);
+export const WifiOffIcon = ({ size = 18 }: P) => svg(size, <><path d="M2 2l20 20" /><path d="M8.5 16.4a5 5 0 0 1 7 0" /><path d="M5 12.9a10 10 0 0 1 5.2-2.8" /><path d="M14 10.1a10 10 0 0 1 5 2.8" /><circle cx="12" cy="20" r="1" fill="currentColor" /></>);

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { HudState } from '@/game/store';
 import { MAX_LEVEL } from '@/game/engine';
-import { CloseIcon, HomeIcon, MusicIcon, PauseIcon, PlayIcon, RestartIcon, SettingsIcon, SoundIcon, VibrateIcon } from './Icons';
+import { AddBoxIcon, CheckIcon, DotsIcon, DownloadIcon, ShareIcon, WifiOffIcon, CloseIcon, HomeIcon, MusicIcon, PauseIcon, PlayIcon, RestartIcon, SettingsIcon, SoundIcon, VibrateIcon } from './Icons';
 import { settings as initialSettings, updateSettings, unlockAudio, type SoundSettings } from '@/game/audio';
 
 const fmtKm = (m: number) => (m / 1000).toFixed(2);
@@ -43,6 +43,85 @@ function Slider({ value, disabled, onChange, label }: { value: number; disabled:
   );
 }
 
+type Platform = 'installed' | 'ios' | 'ios-other' | 'android' | 'desktop';
+function detectPlatform(): Platform {
+  const nav = navigator as any, ua = navigator.userAgent;
+  if (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || nav.standalone) return 'installed';
+  const ios = /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+  if (ios) return /crios|fxios|edgios/i.test(ua) ? 'ios-other' : 'ios';
+  return /android/i.test(ua) ? 'android' : 'desktop';
+}
+
+function useInstall() {
+  const [prompt, setPrompt] = useState<any>(null);
+  const [platform, setPlatform] = useState<Platform>('desktop');
+  useEffect(() => {
+    const sync = () => { setPrompt((window as any).__installPrompt ?? null); setPlatform(detectPlatform()); };
+    sync();
+    window.addEventListener('fitrun-installable', sync);
+    return () => window.removeEventListener('fitrun-installable', sync);
+  }, []);
+  const install = async () => {
+    if (!prompt) return;
+    prompt.prompt();
+    await prompt.userChoice.catch(() => null);
+    (window as any).__installPrompt = null;
+    setPrompt(null);
+    setPlatform(detectPlatform());
+  };
+  return { prompt, platform, install };
+}
+
+function Step({ n, icon, children }: { n: number; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <li className="step">
+      <span className="step-n">{n}</span>
+      <span className="step-icon">{icon}</span>
+      <span className="step-text">{children}</span>
+    </li>
+  );
+}
+
+/** "Get the app": one-tap install where the browser allows it, step-by-step instructions on iPhone. */
+function InstallPanel() {
+  const { prompt, platform, install } = useInstall();
+  if (platform === 'installed') {
+    return <div className="install-ok"><CheckIcon size={18} /> Installed — FIT RUN is on your home screen and works offline.</div>;
+  }
+  return (
+    <div className="install">
+      <p className="install-lead">Add FIT RUN to your home screen: full screen, its own icon, and it plays <b>without internet</b> <WifiOffIcon size={14} />.</p>
+      {prompt && <button className="cta install-btn" onPointerDown={stop} onClick={install}><span className="with-icon"><DownloadIcon />INSTALL APP</span></button>}
+      {!prompt && platform === 'ios' && (
+        <ol className="steps">
+          <Step n={1} icon={<ShareIcon />}>Tap <b>Share</b> in Safari's toolbar</Step>
+          <Step n={2} icon={<AddBoxIcon />}>Scroll down, tap <b>Add to Home Screen</b></Step>
+          <Step n={3} icon={<CheckIcon />}>Tap <b>Add</b> in the top-right corner</Step>
+        </ol>
+      )}
+      {!prompt && platform === 'ios-other' && (
+        <ol className="steps">
+          <Step n={1} icon={<ShareIcon />}>Tap <b>Share</b> (next to the address bar)</Step>
+          <Step n={2} icon={<AddBoxIcon />}>Tap <b>Add to Home Screen</b> → <b>Add</b></Step>
+          <Step n={3} icon={<DotsIcon />}>Not there? Open this page in <b>Safari</b> and do the same</Step>
+        </ol>
+      )}
+      {!prompt && platform === 'android' && (
+        <ol className="steps">
+          <Step n={1} icon={<DotsIcon />}>Tap the browser menu <b>⋮</b></Step>
+          <Step n={2} icon={<DownloadIcon />}>Tap <b>Install app</b> or <b>Add to Home screen</b></Step>
+        </ol>
+      )}
+      {!prompt && platform === 'desktop' && (
+        <ol className="steps">
+          <Step n={1} icon={<DownloadIcon />}>In Chrome or Edge, click the <b>install icon</b> at the right of the address bar</Step>
+          <Step n={2} icon={<DotsIcon />}>Or open the menu <b>⋮</b> → <b>Install FIT RUN</b></Step>
+        </ol>
+      )}
+    </div>
+  );
+}
+
 /** Sound & feel settings, used in the pause menu and from the start screen. */
 function Settings() {
   const [s, setS] = useState<SoundSettings>({ ...initialSettings });
@@ -59,6 +138,10 @@ function Settings() {
       </div>
       <div className="set-row">
         <Toggle label="Vibration" icon={<VibrateIcon />} on={s.vibration} onChange={(v) => set({ vibration: v })} />
+      </div>
+      <div className="set-row">
+        <span className="set-title with-icon"><DownloadIcon size={18} />Get the app</span>
+        <InstallPanel />
       </div>
     </div>
   );
@@ -79,13 +162,9 @@ function Sheet({ title, children, onClose }: { title: string; children: React.Re
 }
 
 export function Hud({ state: s, actions }: { state: HudState; actions: HudActions }) {
-  const [install, setInstall] = useState<any>(null);
   const [showSettings, setShowSettings] = useState(false);
-  useEffect(() => {
-    const h = (e: Event) => { e.preventDefault(); setInstall(e); };
-    window.addEventListener('beforeinstallprompt', h);
-    return () => window.removeEventListener('beforeinstallprompt', h);
-  }, []);
+  const [showInstall, setShowInstall] = useState(false);
+  const { platform } = useInstall();
   useEffect(() => { if (s.phase !== 'paused' && s.phase !== 'menu') setShowSettings(false); }, [s.phase]);
   const [offline, setOffline] = useState(false);
   useEffect(() => {
@@ -130,7 +209,8 @@ export function Hud({ state: s, actions }: { state: HudState; actions: HudAction
           <li>💥 a crash costs ⅓ of your stamina · 9 shakes in a row = BEAST</li>
         </ul>
         {offline && <p className="offline-ok">✓ Ready to play offline</p>}
-        {install && <button className="ghost" onPointerDown={stop} onClick={() => install.prompt()}>Install app</button>}
+        {platform !== 'installed' && <button className="ghost with-icon" onPointerDown={stop} onClick={() => setShowInstall(true)}><DownloadIcon size={18} />Get the app</button>}
+        {showInstall && <Sheet title="Get the app" onClose={() => setShowInstall(false)}><InstallPanel /></Sheet>}
         {showSettings && <Sheet title="Settings" onClose={() => setShowSettings(false)}><Settings /></Sheet>}
       </div>
     );

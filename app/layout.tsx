@@ -20,6 +20,11 @@ export const viewport: Viewport = {
 
 // Production builds work offline (service worker precaches every file). In `npm run dev` any old worker is removed,
 // so development never serves a stale cached build.
+// The browser's "can install" event fires right after load, before the game UI exists: keep it for later.
+const catchInstall = `
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); window.__installPrompt = e; window.dispatchEvent(new Event('fitrun-installable')); });
+window.addEventListener('appinstalled', () => { window.__installPrompt = null; window.dispatchEvent(new Event('fitrun-installable')); });`;
+
 const registerSW = process.env.NODE_ENV === 'production' ? `
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -37,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         {children}
+        <script dangerouslySetInnerHTML={{ __html: catchInstall }} />
         <script dangerouslySetInnerHTML={{ __html: registerSW }} />
       </body>
     </html>
