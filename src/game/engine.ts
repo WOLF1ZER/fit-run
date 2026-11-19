@@ -12,9 +12,9 @@ import { ASSET } from './materials';
 // ---- tuning ----
 const BEAST_TIME = 8;
 const CRASH_COST = 34; // three crashes from full stamina end the run
-const INVULN_TIME = 1.5;
+const INVULN_TIME = 0.5; // only merges hits from one moment (e.g. squeezing between two cars) into one crash
 const BEAST_STREAK = 9; // shakes in a row without a crash or junk food
-const LANE_CHANGE_TIME = 0.42; // seconds a player needs to see and dodge into the next lane
+const LANE_CHANGE_TIME = 0.38; // seconds a player needs to see and dodge into the next lane
 const SECOND_WIND_TIME = 3.2;
 const SECOND_WIND_TAPS = 12;
 const xpForLevel = (lvl: number) => 3 + lvl; // shakes needed to go from lvl to lvl+1
@@ -297,18 +297,20 @@ export class Engine {
     const d = this.distance, r = Math.random;
     const canShift = gap / Math.max(this.speed, 8) >= LANE_CHANGE_TIME;
     if (canShift && r() < 0.6) this.safeLane = Math.max(0, Math.min(2, this.safeLane + (r() < 0.5 ? -1 : 1)));
-    const solid: ObstacleKind[] = d > 300 ? ['car', 'car', 'jogger'] : ['car'];
-    const passable: ObstacleKind[] = d > 150 ? ['barrier', 'banner'] : ['barrier'];
-    const difficulty = Math.min(1, d / 2500);
+    const solid: ObstacleKind[] = d > 120 ? ['car', 'jogger', 'jogger'] : ['car'];
+    const passable: ObstacleKind[] = d > 80 ? ['barrier', 'banner'] : ['barrier'];
+    const difficulty = Math.min(1, d / 1500);
     for (let lane = 0; lane < 3; lane++) {
       if (lane === this.safeLane) {
-        // the safe lane sometimes needs a jump or a slide (never a solid blocker)
-        if (d > 250 && r() < 0.15 + 0.25 * difficulty) this.ents.spawnObstacle(passable[Math.floor(r() * passable.length)], lane, zWorld);
+        // the safe lane often needs a jump or a slide (never a solid blocker)
+        if (d > 120 && r() < 0.25 + 0.35 * difficulty) this.ents.spawnObstacle(passable[Math.floor(r() * passable.length)], lane, zWorld);
         continue;
       }
-      if (r() > 0.45 + 0.45 * difficulty) continue; // leave this lane open too
-      const kind = r() < 0.55 + 0.2 * difficulty ? solid[Math.floor(r() * solid.length)] : passable[Math.floor(r() * passable.length)];
+      if (r() > 0.6 + 0.35 * difficulty) continue; // leave this lane open too
+      const kind = r() < 0.6 + 0.2 * difficulty ? solid[Math.floor(r() * solid.length)] : passable[Math.floor(r() * passable.length)];
       this.ents.spawnObstacle(kind, lane, zWorld - (kind === 'car' ? 2.4 : 0));
+      // a pack of joggers: a second one right behind the first
+      if (kind === 'jogger' && d > 600 && r() < 0.4) this.ents.spawnObstacle('jogger', lane, zWorld - 1.8);
     }
     // pickups follow the safe lane, just past the row (so collecting them never forces a crash)
     if (r() < 0.85) {
@@ -361,7 +363,7 @@ export class Engine {
     }
     this.t += dt;
     // speed
-    const base = 9 + 7 * (1 - Math.exp(-this.distance / 1500)) + this.level * 0.25;
+    const base = 9.5 + 8.5 * (1 - Math.exp(-this.distance / 1200)) + this.level * 0.25;
     const target = base * (this.heavy > 0 ? 0.82 : 1) * (this.player.stumble > 0 ? 0.55 : 1) * (this.beast > 0 ? 1.45 : 1);
     this.speed += (target - this.speed) * Math.min(1, dt * 2.5);
     const dz = this.speed * dt;
@@ -388,15 +390,16 @@ export class Engine {
     while (this.nextRow < this.distance + 140) {
       this.spawnRow(-(this.nextRow - this.distance), this.lastGap);
       // gaps shrink with distance but never below what the current speed needs to react and switch lanes
-      const minGap = Math.max(9, this.speed * (LANE_CHANGE_TIME + 0.35) + 4.8);
-      this.lastGap = Math.max(minGap, 24 - this.distance / 300) + Math.random() * 5;
+      const minGap = Math.max(8.5, this.speed * (LANE_CHANGE_TIME + 0.28) + 4.8);
+      this.lastGap = Math.max(minGap, 20 - this.distance / 220) + Math.random() * 4;
       this.nextRow += this.lastGap;
     }
 
     // collisions
     const pb = this.player.bounds();
     for (const it of this.ents.items) {
-      if (!it.active || Math.abs(it.z) > 0.9) continue;
+      // swept test: did it pass the player's plane since last frame? (no tunnelling at high speed / low FPS)
+      if (!it.active || it.prevZ > 0.9 || it.z < -0.9) continue;
       if (Math.abs(LANES[it.lane] - pb.x) < 1.0 && pb.y0 < it.y + 0.6) { it.active = false; this.collect(it.kind); }
     }
     for (const o of this.ents.obstacles) {
@@ -409,7 +412,8 @@ export class Engine {
           this.bonus += 250; sfx.close(); this.popup('+250 CLOSE!', '#ff8a3d', false, 0.62, 0.5);
         }
       }
-      if (o.hit || Math.abs(o.z) > half || Math.abs(LANES[o.lane] - pb.x) > 1.05) continue;
+      // swept along z and using real widths (so a crash mid lane-change counts too)
+      if (o.hit || o.prevZ > half || o.z < -half || Math.abs(LANES[o.lane] - pb.x) > o.halfW + 0.32) continue;
       let blocks = true;
       if (o.kind === 'barrier') blocks = pb.y0 < 0.85; // jump over it
       if (o.kind === 'banner') blocks = pb.y1 > 1.25; // slide under it
@@ -479,8 +483,7 @@ export class Engine {
   };
 
   /** For automated tests: advance the game by `seconds` of fixed steps without rendering. */
-  simulate(seconds: number) {
-    const dt = 1 / 30;
+  simulate(seconds: number, dt = 1 / 30) {
     for (let t = 0; t < seconds; t += dt) if (hud.get().phase !== 'paused') this.step(dt);
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);

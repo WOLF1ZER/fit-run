@@ -8,9 +8,9 @@ import { buildCarParts, LANES } from './world';
 export type ItemKind = 'shake' | 'water' | 'banana' | 'burger' | 'soda';
 export type ObstacleKind = 'car' | 'barrier' | 'banner' | 'jogger';
 
-export interface Item { kind: ItemKind; obj: THREE.Object3D; body: THREE.Object3D; lane: number; z: number; y: number; active: boolean; spin: number }
+export interface Item { kind: ItemKind; obj: THREE.Object3D; body: THREE.Object3D; lane: number; z: number; prevZ: number; y: number; active: boolean; spin: number }
 export interface Obstacle {
-  kind: ObstacleKind; obj: THREE.Object3D; lane: number; z: number; len: number; active: boolean; hit: boolean; passed: boolean;
+  kind: ObstacleKind; obj: THREE.Object3D; lane: number; z: number; prevZ: number; len: number; halfW: number; active: boolean; hit: boolean; passed: boolean;
   mixer?: THREE.AnimationMixer; vz: number; fly?: THREE.Vector3; spinFly?: number;
 }
 
@@ -172,13 +172,14 @@ export class Entities {
     obj.position.set(LANES[lane], 0, z);
     const body = obj.getObjectByName('body')!;
     body.position.y = y;
-    this.items.push({ kind, obj, body, lane, z, y, active: true, spin: Math.random() * 6 });
+    this.items.push({ kind, obj, body, lane, z, prevZ: z, y, active: true, spin: Math.random() * 6 });
   }
   spawnObstacle(kind: ObstacleKind, lane: number, z: number) {
     const obj = this.take(kind);
     obj.position.set(LANES[lane], 0, z);
     const o: Obstacle = { kind, obj, lane, z, active: true, hit: false, passed: false, vz: 0,
-      len: kind === 'car' ? 4.8 : kind === 'jogger' ? 0.6 : 0.4 };
+      prevZ: z, len: kind === 'car' ? 4.8 : kind === 'jogger' ? 0.6 : 0.4,
+      halfW: kind === 'car' ? 0.95 : kind === 'jogger' ? 0.35 : kind === 'barrier' ? 1.1 : 1.2 };
     if (kind === 'jogger') {
       o.vz = 0; // jogs on the spot: never drifts into another row's free lane
       const clips = (obj as any).__clips as THREE.AnimationClip[];
@@ -192,6 +193,7 @@ export class Entities {
 
   update(dt: number, dz: number, t: number) {
     for (const it of this.items) {
+      it.prevZ = it.z;
       it.z += dz;
       it.obj.position.z = it.z;
       const body = it.body;
@@ -199,6 +201,7 @@ export class Entities {
       body.position.y = it.y + Math.sin(t * 3 + it.spin) * 0.08;
     }
     for (const o of this.obstacles) {
+      o.prevZ = o.z;
       o.z += dz + o.vz * dt;
       o.obj.position.z = o.z;
       if (o.mixer) o.mixer.update(dt);
