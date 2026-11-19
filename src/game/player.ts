@@ -72,6 +72,12 @@ export class Player {
   private keepFeetOnRoad(dt: number) {
     if (!this.feet.length) return;
     this.model.position.y -= this.lift; // measure without last frame's lift
+    if (this.sliding > 0) {
+      // the slide keeps its original lean-back pose: no lifting while sliding
+      this.lift = Math.max(0, this.lift - dt * 4);
+      this.model.position.y += this.lift;
+      return;
+    }
     this.root.updateMatrixWorld(true);
     let below = 0;
     for (const f of this.feet) below = Math.max(below, f.rest - (f.bone.getWorldPosition(this.tmp).y - this.root.position.y));
