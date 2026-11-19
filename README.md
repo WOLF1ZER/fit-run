@@ -7,6 +7,9 @@ You sprint forever through a sunny city. Protein shakes make your character visi
 bananas refill stamina and junk food slows you down. Three shakes in a row trigger Beast Mode.
 The run ends when stamina hits zero (one Second Wind per run).
 
+The run starts at your real time of day and moves on every 1.2 km (morning → noon → sunset → night),
+and the location changes every km: Palm Boulevard → Beach Promenade → Downtown.
+
 > Work in progress: the playable prototype is being built on this branch.
 
 ## Assets

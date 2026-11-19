@@ -40,6 +40,9 @@ export interface HudState {
   beast: number; // seconds left, 0 when off
   heavy: number; // seconds left of junk-food slowdown
   inShade: boolean;
+  night: boolean;
+  place: string;
+  timeName: string;
   lowWater: boolean;
   pops: Pop[];
   secondWindTaps: number;
@@ -71,6 +74,9 @@ const initial: HudState = {
   beast: 0,
   heavy: 0,
   inShade: true,
+  night: false,
+  place: 'PALM BOULEVARD',
+  timeName: 'SUNSET',
   lowWater: false,
   pops: [],
   secondWindTaps: 0,

@@ -205,7 +205,8 @@ export function Hud({ state: s, actions }: { state: HudState; actions: HudAction
         <ul className="howto">
           <li><b>←  →</b> change lane · <b>↑</b> jump · <b>↓</b> slide</li>
           <li>🥤 shakes grow you · 💧 water · 🍌 energy · 🍔🥤 junk drains you</li>
-          <li>☀ sun dries you out — run in the shade</li>
+          <li>☀ sun dries you out — run in the shade · 🌙 nights are cool</li>
+          <li>🌅 day turns to night as you run · new place every km</li>
           <li>💥 a crash costs ⅓ of your stamina · 9 shakes in a row = BEAST</li>
         </ul>
         {offline && <p className="offline-ok">✓ Ready to play offline</p>}
@@ -234,7 +235,7 @@ export function Hud({ state: s, actions }: { state: HudState; actions: HudAction
           </div>
           <div className="mb-right">
             <b>🥤 {s.shakes}</b>
-            <span>❤ {s.bpm} · <em className={s.inShade ? 'shade' : 'sun'}>{s.inShade ? 'SHADE' : 'SUN'}</em></span>
+            <span>❤ {s.bpm} · <em className={s.night ? 'night' : s.inShade ? 'shade' : 'sun'}>{s.night ? 'NIGHT' : s.inShade ? 'SHADE' : 'SUN'}</em></span>
           </div>
           <button className="icon-btn pause-btn" aria-label="Pause" disabled={!playing} onPointerDown={stop} onClick={actions.pause}><PauseIcon /></button>
         </div>
@@ -261,6 +262,7 @@ export function Hud({ state: s, actions }: { state: HudState; actions: HudAction
         <Sheet title={showSettings ? 'Settings' : 'Paused'} onClose={showSettings ? () => setShowSettings(false) : undefined}>
           {showSettings ? <Settings /> : (
             <div className="pause-menu">
+              <p className="pause-place">📍 {s.place} · {s.timeName}</p>
               <div className="pause-stats">
                 <div><b>{fmtKm(s.distance)}</b><span>km</span></div>
                 <div><b>{s.shakes}</b><span>shakes</span></div>

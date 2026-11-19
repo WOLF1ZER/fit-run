@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
-import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { World, SUN_DIR, LANES } from './world';
+import { World, LANES, DISTRICT_NAMES, type District } from './world';
+import { Atmosphere, todFromClock, type TimeName } from './atmosphere';
 import { Player } from './player';
 import { Entities, type ItemKind, type ObstacleKind, type Obstacle } from './entities';
 import { growthForLevel, BEAST_K } from './growth';
@@ -32,6 +32,11 @@ export class Engine {
   private player = new Player();
   private ents = new Entities();
   private sun!: THREE.DirectionalLight;
+  private atmo!: Atmosphere;
+  private tod0 = 2;
+  private lastTime: TimeName | '' = '';
+  private lastDistrict: District | '' = '';
+  static PHASE_LEN = 1200; // metres per time-of-day phase
   private raf = 0;
   private disposed = false;
   private quality: 'high' | 'low';
@@ -100,27 +105,14 @@ export class Engine {
     const exr = await new EXRLoader().loadAsync(`${ASSET}/sunset.exr`);
     this.scene.environment = pm.fromEquirectangular(exr).texture;
     this.scene.environmentIntensity = 0.85;
-    const sky = new Sky();
-    sky.scale.setScalar(4000);
-    const u = sky.material.uniforms;
-    u.turbidity.value = 6; u.rayleigh.value = 1.6; u.mieCoefficient.value = 0.008; u.mieDirectionalG.value = 0.9;
-    u.sunPosition.value.copy(SUN_DIR);
-    this.scene.add(sky);
-    this.scene.fog = new THREE.FogExp2('#e9c3a0', 0.0045);
-    this.sun = new THREE.DirectionalLight('#ffcf9a', 5);
-    this.sun.position.copy(SUN_DIR).multiplyScalar(80);
-    this.sun.target.position.set(0, 0, -20);
-    this.sun.castShadow = true;
-    const sm = this.quality === 'high' ? 2048 : 1024;
-    this.sun.shadow.mapSize.set(sm, sm);
-    Object.assign(this.sun.shadow.camera, { left: -28, right: 28, top: 40, bottom: -40, near: 1, far: 220 });
-    this.sun.shadow.bias = -0.0004;
-    this.sun.shadow.normalBias = 0.04;
-    this.scene.add(this.sun, this.sun.target);
-    this.scene.add(new THREE.HemisphereLight('#bcd4ff', '#5a4030', 0.45));
-
     await this.world.init((f, l) => step(0.05 + f * 0.45, l));
-    this.scene.add(this.world.group, this.world.backdrop);
+    this.scene.add(this.world.group, this.world.backdrop, this.world.ocean);
+    const M = this.world.mats;
+    this.atmo = new Atmosphere(this.scene, this.renderer, this.quality === 'high' ? 2048 : 1024,
+      { lamp: this.world.vcGlow.color, signs: [M.signs.mat, M.ads.mat], towers: [M.glassT], pools: [M.pool] });
+    this.sun = this.atmo.sun;
+    this.tod0 = todFromClock();
+    this.atmo.set(this.tod0);
     step(0.55, 'Loading your athlete');
     await this.player.load((f) => step(0.55 + f * 0.3, 'Loading your athlete'));
     this.scene.add(this.player.root);
@@ -137,9 +129,11 @@ export class Engine {
     this.ents.sync();
     this.camera.position.set(0, 2.3, 3.3);
     this.camera.lookAt(0, 1.2, -9);
+    this.world.warmup(true); // the other locations' blocks + ocean, so their shaders compile now too
     this.renderer.compile(this.scene, this.camera);
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
+    this.world.warmup(false);
     this.ents.clear();
     step(1, 'Ready');
     this.toMenu();
@@ -161,6 +155,9 @@ export class Engine {
     this.ents.clear();
     this.player.reset();
     this.player.heading = 0; // face the camera on the start screen, city behind
+    this.world.reset();
+    this.tod0 = todFromClock();
+    this.atmo?.set(this.tod0);
     music.setIntensity(0);
     hud.set({ phase: 'menu', stats: null, best: this.profile.best });
   }
@@ -175,6 +172,10 @@ export class Engine {
       beast: 0, heavy: 0, bonus: 0, nextRow: 28, secondWindUsed: false, pops: [], safeLane: 1, lastGap: 20, rowsSinceJogger: 0,
     });
     this.ents.clear();
+    this.world.reset();
+    this.tod0 = todFromClock(); // the run starts at your real time of day
+    this.atmo.set(this.tod0);
+    this.lastTime = this.atmo.name; this.lastDistrict = 'boulevard';
     this.player.reset();
     this.player.setGrowth(growthForLevel(this.level), true);
     this.player.startRunning();
@@ -390,6 +391,7 @@ export class Engine {
     if (!running) {
       // start screen: slow orbit around the idling athlete
       this.player.update(dt, 0, false);
+      this.atmo?.followLamps(this.world.lampZ(), this.player.x);
       if (phase === 'menu' || phase === 'loading') {
         // start screen: a slow swing in front of the athlete, the street and skyline behind him
         const a = Math.sin(this.t * 0.22) * 0.9;
@@ -406,8 +408,20 @@ export class Engine {
     this.speed += (target - this.speed) * Math.min(1, dt * 2.5);
     const dz = this.speed * dt;
     this.distance += dz;
-    this.world.update(dz);
+    this.world.update(dz, dt);
     this.ents.update(dt, dz, this.t);
+    // time of day moves on with the distance; new location every km
+    this.atmo.set(this.tod0 + this.distance / Engine.PHASE_LEN);
+    this.atmo.followLamps(this.world.lampZ(), this.player.x);
+    if (this.atmo.name !== this.lastTime) {
+      this.lastTime = this.atmo.name;
+      const msg = { MORNING: '🌅 SUNRISE', NOON: '☀ HIGH NOON · DRINK MORE', SUNSET: '🌇 SUNSET', NIGHT: '🌙 NIGHT RUN' }[this.lastTime];
+      this.popup(msg, '#ffe2a8', true, 0.5, 0.3);
+    }
+    if (this.world.district !== this.lastDistrict) {
+      this.lastDistrict = this.world.district;
+      this.popup('📍 ' + DISTRICT_NAMES[this.lastDistrict], '#9fe8ff', true, 0.5, 0.36);
+    }
     this.player.update(dt, this.speed, true);
 
     // timers
@@ -419,8 +433,9 @@ export class Engine {
     }
 
     // sun & shade
-    this.inShade = this.world.isInShade(this.player.x, 1.2);
-    this.hydration = Math.max(0, this.hydration - (this.inShade ? 0.25 : 3.2) * dt);
+    // sun & shade: the sun's position follows the time of day; at night nothing dries you out
+    this.inShade = this.atmo.night > 0.5 || this.world.isInShade(this.player.x, 1.2, this.atmo.dir);
+    this.hydration = Math.max(0, this.hydration - (this.inShade ? 0.25 : 3.2 * this.atmo.burn) * dt);
     const drain = (1.1 + this.distance / 4000) * (this.hydration < 25 ? 2 : 1) * Math.max(0.6, 1 - 0.025 * this.level);
     this.stamina = Math.max(0, this.stamina - drain * dt);
 
@@ -499,7 +514,8 @@ export class Engine {
         distance: this.distance,
         stamina: this.stamina, hydration: this.hydration, level: this.level, maxed: this.level >= MAX_LEVEL, xp: this.level >= MAX_LEVEL ? 1 : this.xp / xpForLevel(this.level), shakes: this.shakes,
         bpm: Math.round(120 + this.speed * 2 + (100 - this.stamina) * 0.3 + (this.beast > 0 ? 20 : 0)),
-        combo: this.combo, comboLabel: this.comboLabel(), beast: this.beast, heavy: this.heavy, inShade: this.inShade, lowWater: this.hydration < 25,
+        combo: this.combo, comboLabel: this.comboLabel(), beast: this.beast, heavy: this.heavy, inShade: this.inShade, night: this.atmo.night > 0.5, lowWater: this.hydration < 25,
+        place: DISTRICT_NAMES[this.world.district], timeName: this.atmo.name,
       });
     }
   }
@@ -518,6 +534,7 @@ export class Engine {
     this.raf = requestAnimationFrame(this.loop);
     const dt = Math.min(0.05, this.clock.getDelta());
     if (hud.get().phase !== 'paused') this.step(dt);
+    this.world.runJobs(this.quality === 'high' ? 5 : 3); // build the next location in small slices
     this.adaptQuality(dt);
     // shadows at half the frame rate: one less full scene pass every other frame
     if ((++this.frame & 1) === 0) this.renderer.shadowMap.needsUpdate = true;
@@ -526,7 +543,7 @@ export class Engine {
 
   /** For automated tests: advance the game by `seconds` of fixed steps without rendering. */
   simulate(seconds: number, dt = 1 / 30) {
-    for (let t = 0; t < seconds; t += dt) if (hud.get().phase !== 'paused') this.step(dt);
+    for (let t = 0; t < seconds; t += dt) { if (hud.get().phase !== 'paused') this.step(dt); this.world.runJobs(5); }
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
     return this.debugState();

@@ -139,3 +139,6 @@ h2 { margin: 0; font-size: clamp(30px, 7vw, 52px); font-weight: 900; }
 .step-text { font-size: 14px; line-height: 1.35; text-align: left; } .step-text b { color: #fff; }
 .install-ok { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #8fe3b0; font-weight: 700; }
 .sheet { max-height: calc(100vh - 40px); overflow-y: auto; }
+
+.mb-right .night { color: #9db4ff; }
+.pause-place { margin: -4px 0 4px; font-size: 12px; letter-spacing: .14em; color: var(--muted); font-weight: 700; }

@@ -61,13 +61,17 @@ export async function pbr(id: string, repeat: number, extra: THREE.MeshStandardM
 }
 
 // Sunlit ground glows hot; shade stays cool. The danger zones read at a glance.
+/** How strongly sunlit ground glows hot (1 at sunset, lower at other times of day, 0 at night). */
+export const HEAT = { value: 1 };
+
 export function heatify(m: THREE.Material, lo = 0.12, hi = 0.4) {
   m.onBeforeCompile = (sh) => {
-    sh.fragmentShader = sh.fragmentShader.replace(
+    sh.uniforms.uHeat = HEAT;
+    sh.fragmentShader = 'uniform float uHeat;\n' + sh.fragmentShader.replace(
       '#include <aomap_fragment>',
       `
       float irr = dot(reflectedLight.directDiffuse, vec3(.3333)) / max(dot(diffuseColor.rgb, vec3(.3333)), .03);
-      float heat = smoothstep(${lo.toFixed(3)}, ${hi.toFixed(3)}, irr);
+      float heat = smoothstep(${lo.toFixed(3)}, ${hi.toFixed(3)}, irr) * uHeat;
       float lum = dot(diffuseColor.rgb, vec3(.3333));
       float vein = 1. - smoothstep(.012, .05, lum);
       reflectedLight.directDiffuse *= mix(vec3(1.), vec3(.55, .36, .28), heat);
