@@ -54,6 +54,7 @@ export class Engine {
   private nextRow = 30;
   private safeLane = 1;
   private lastGap = 20;
+  private rowsSinceJogger = 0;
   private shakeCam = 0;
   private inShade = true;
   private secondWindUsed = false;
@@ -162,7 +163,7 @@ export class Engine {
     this.startLevel = 1 + Math.min(3, Math.floor(this.profile.totalShakes / 40));
     Object.assign(this, {
       t: 0, distance: 0, speed: 9, stamina: 100, hydration: 100, level: this.startLevel, xp: 0, shakes: 0, shakeStreak: 0, combo: 0,
-      beast: 0, heavy: 0, bonus: 0, nextRow: 28, secondWindUsed: false, pops: [], safeLane: 1, lastGap: 20,
+      beast: 0, heavy: 0, bonus: 0, nextRow: 28, secondWindUsed: false, pops: [], safeLane: 1, lastGap: 20, rowsSinceJogger: 0,
     });
     this.ents.clear();
     this.player.reset();
@@ -297,7 +298,10 @@ export class Engine {
     const d = this.distance, r = Math.random;
     const canShift = gap / Math.max(this.speed, 8) >= LANE_CHANGE_TIME;
     if (canShift && r() < 0.6) this.safeLane = Math.max(0, Math.min(2, this.safeLane + (r() < 0.5 ? -1 : 1)));
-    const solid: ObstacleKind[] = d > 120 ? ['car', 'jogger', 'jogger'] : ['car'];
+    // joggers: never in pairs, at most one per row, and at least one jogger-free row in between
+    const joggerOk = d > 200 && this.rowsSinceJogger >= 2;
+    let joggerUsed = false;
+    const solid: ObstacleKind[] = ['car'];
     const passable: ObstacleKind[] = d > 80 ? ['barrier', 'banner'] : ['barrier'];
     const difficulty = Math.min(1, d / 1500);
     for (let lane = 0; lane < 3; lane++) {
@@ -307,11 +311,12 @@ export class Engine {
         continue;
       }
       if (r() > 0.6 + 0.35 * difficulty) continue; // leave this lane open too
-      const kind = r() < 0.6 + 0.2 * difficulty ? solid[Math.floor(r() * solid.length)] : passable[Math.floor(r() * passable.length)];
+      let kind: ObstacleKind = r() < 0.6 + 0.2 * difficulty ? solid[Math.floor(r() * solid.length)] : passable[Math.floor(r() * passable.length)];
+      if (kind === 'car' && joggerOk && !joggerUsed && r() < 0.3) kind = 'jogger';
+      if (kind === 'jogger') joggerUsed = true;
       this.ents.spawnObstacle(kind, lane, zWorld - (kind === 'car' ? 2.4 : 0));
-      // a pack of joggers: a second one right behind the first
-      if (kind === 'jogger' && d > 600 && r() < 0.4) this.ents.spawnObstacle('jogger', lane, zWorld - 1.8);
     }
+    this.rowsSinceJogger = joggerUsed ? 0 : this.rowsSinceJogger + 1;
     // pickups follow the safe lane, just past the row (so collecting them never forces a crash)
     if (r() < 0.85) {
       const roll = r();
