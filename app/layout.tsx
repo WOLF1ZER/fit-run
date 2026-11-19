@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   title: 'FIT RUN',
   description: 'Endless 3D fitness runner: grab protein shakes, stay hydrated, grow into a beast.',
   manifest: '/manifest.webmanifest',
-  icons: { icon: '/icons/icon-192.png', apple: '/icons/icon-192.png' },
+  icons: { icon: '/icons/icon-192.png', apple: '/icons/apple-touch-icon.png' },
   appleWebApp: { capable: true, title: 'FIT RUN', statusBarStyle: 'black-translucent' },
 };
 
