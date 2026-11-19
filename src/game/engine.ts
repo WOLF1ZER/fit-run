@@ -449,10 +449,14 @@ export class Engine {
     if (this.stamina <= 0) this.fail();
 
     // camera follows from behind and above, wider at speed
-    const cx = this.player.x * 0.65 + 0.25, shake = this.shakeCam > 0 ? (Math.random() - 0.5) * this.shakeCam : 0;
+    // portrait phones see a narrow slice of the road: follow the runner fully sideways and pull back a little,
+    // so he stays whole and centred in every lane; wide screens keep the offset over-the-shoulder view
+    const portrait = this.camera.aspect < 1;
+    const follow = portrait ? 1 : 0.65, side = portrait ? 0 : 0.25, back = portrait ? 4.3 : 3.3, up = portrait ? 2.6 : 2.3;
+    const shake = this.shakeCam > 0 ? (Math.random() - 0.5) * this.shakeCam : 0;
     this.shakeCam = Math.max(0, this.shakeCam - dt);
-    this.camera.position.set(cx + shake, 2.3 + this.player.y * 0.3 + shake * 0.5, 3.3);
-    this.camera.lookAt(this.player.x * 0.65 - 0.4, 1.25 + this.player.y * 0.4, -9);
+    this.camera.position.set(this.player.x * follow + side + shake, up + this.player.y * 0.3 + shake * 0.5, back);
+    this.camera.lookAt(this.player.x * follow - (portrait ? 0 : 0.4), 1.25 + this.player.y * 0.4, -9);
     const baseFov = this.camera.aspect < 1 ? 64 : 52;
     this.camera.fov += (baseFov + (this.speed - 9) * 0.55 + (this.beast > 0 ? 6 : 0) - this.camera.fov) * Math.min(1, dt * 3);
     this.camera.updateProjectionMatrix();
