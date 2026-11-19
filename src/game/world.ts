@@ -64,6 +64,7 @@ export class World {
   private props: Record<string, THREE.Object3D> = {};
   private ray = new THREE.Ray();
   private tmpBox = new THREE.Box3();
+  private tmpOff = new THREE.Vector3();
 
   async init(onProgress: (f: number, label: string) => void) {
     onProgress(0.05, 'Photo-scanned textures');
@@ -120,9 +121,9 @@ export class World {
       trunk: P({ color: '#7a6650', roughness: 1 }),
       skirt: P({ color: '#6b5a3c', roughness: 1 }),
       frond: P({ map: frondTexture(rnd), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.8 }),
-      paint: new THREE.MeshPhysicalMaterial({ vertexColors: true, metalness: 0.55, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.05 }),
+      paint: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.6, roughness: 0.28 }),
       paints: ['#101418', '#e8e8e6', '#7a0f14', '#1f3a5f', '#9aa0a4', '#0d0d0d', '#c9b38a', '#2f4a3a', '#c7c9cc'].map((c) =>
-        new THREE.MeshPhysicalMaterial({ color: c, metalness: 0.55, roughness: 0.32, clearcoat: 1, clearcoatRoughness: 0.05 })), // obstacle cars
+        new THREE.MeshStandardMaterial({ color: c, metalness: 0.6, roughness: 0.28 })), // obstacle cars
       paintColors: ['#101418', '#e8e8e6', '#7a0f14', '#1f3a5f', '#9aa0a4', '#0d0d0d', '#c9b38a', '#2f4a3a', '#c7c9cc'].map((c) => new THREE.Color(c)),
       grime: decal(grimeTexture()),
     };
@@ -177,7 +178,8 @@ export class World {
       const z = c.group.position.z;
       if (z < -2 * CHUNK || z > 2 * CHUNK) continue;
       for (const b of c.boxes) {
-        this.tmpBox.copy(b).translate(new THREE.Vector3(0, 0, z));
+        this.tmpOff.set(0, 0, z);
+        this.tmpBox.copy(b).translate(this.tmpOff);
         if (this.ray.intersectsBox(this.tmpBox)) return true;
       }
     }

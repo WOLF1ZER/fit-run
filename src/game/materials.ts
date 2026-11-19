@@ -44,12 +44,9 @@ export async function pbr(id: string, repeat: number, extra: THREE.MeshStandardM
     loadTex(`${ASSET}/tex/${id}/nor.jpg`, false),
     loadTex(`${ASSET}/tex/${id}/arm.jpg`, false),
   ]);
-  const set = [d, n, a].map((t) => {
-    const c = t.clone();
-    c.repeat.set(repeat, repeat);
-    c.needsUpdate = true;
-    return c;
-  });
+  // share the loaded textures (a clone would upload a second copy to the GPU)
+  const set = [d, n, a];
+  for (const t of set) t.repeat.set(repeat, repeat);
   return new THREE.MeshStandardMaterial({
     map: set[0],
     normalMap: set[1],

@@ -147,8 +147,9 @@ export class Player {
     this.tilt += (-vx * 0.035 - this.tilt) * Math.min(1, dt * 10);
     const slideK = this.sliding > 0 ? Math.min(1, this.sliding / 0.15, (SLIDE_TIME - this.sliding + 0.05) / 0.12) : 0;
     const stumbleK = this.stumble > 0 ? Math.sin((1 - this.stumble / 1.1) * Math.PI) : 0;
-    this.model.rotation.set(-slideK * 1.15 + stumbleK * 0.35, this.heading, this.tilt);
-    this.model.position.y = -slideK * 0.55;
+    // slide: lean back pivoting on the feet (head drops to ~0.9 m), never below the road surface
+    this.model.rotation.set(-slideK * 1.0 + stumbleK * 0.35, this.heading, this.tilt);
+    this.model.position.set(0, 0.04 * slideK, 0);
     const run = this.actions.Run;
     if (run) run.timeScale = 0.75 + speed * 0.035;
     this.mixer.update(dt);

@@ -25,6 +25,16 @@ export function Hud({ state: s, onStart, onResume }: { state: HudState; onStart:
   }, []);
   const stop = (e: React.PointerEvent) => e.stopPropagation();
 
+  if (s.phase === 'error') {
+    return (
+      <div className="overlay loading">
+        <h1 className="logo">FIT<span>RUN</span></h1>
+        <p className="muted">{s.loadLabel}</p>
+        <button className="cta" onPointerDown={stop} onClick={() => location.reload()}>RELOAD</button>
+      </div>
+    );
+  }
+
   if (s.phase === 'loading') {
     return (
       <div className="overlay loading">

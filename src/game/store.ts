@@ -1,6 +1,6 @@
 // Tiny external store: the engine writes HUD state, React reads it with useSyncExternalStore.
 
-export type Phase = 'loading' | 'menu' | 'running' | 'secondwind' | 'over' | 'paused';
+export type Phase = 'loading' | 'menu' | 'running' | 'secondwind' | 'over' | 'paused' | 'error';
 
 export interface Pop {
   id: number;

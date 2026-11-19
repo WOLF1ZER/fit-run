@@ -15,7 +15,6 @@ export interface Obstacle {
 }
 
 const P = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial(o);
-const PP = (o: THREE.MeshPhysicalMaterialParameters) => new THREE.MeshPhysicalMaterial(o);
 
 function mergeGroup(g: THREE.Group) {
   // collapse a hand-built group into one mesh per material (fewer draw calls)
@@ -53,7 +52,7 @@ export class Entities {
     const shakeLabel = [labelTexture('#e53935', 'WHEY'), labelTexture('#1e5bd8', 'WHEY'), labelTexture('#7b2cbf', 'WHEY')];
     const flav = ['#6b3e26', '#e9c9a8', '#c47aa8'];
     const caps = ['#e53935', '#1e5bd8', '#7b2cbf'];
-    const shell = PP({ color: '#ffffff', transmission: 0.85, roughness: 0.12, thickness: 0.2, ior: 1.45, side: THREE.DoubleSide });
+    const shell = P({ color: '#ffffff', transparent: true, opacity: 0.35, roughness: 0.15, depthWrite: false, side: THREE.DoubleSide });
     let si = 0;
     this.proto.shake = () => {
       const k = si++ % 3, g = new THREE.Group();
@@ -67,7 +66,7 @@ export class Entities {
       g.scale.setScalar(1.25);
       return this.withHalo(g, caps[k]);
     };
-    const waterMat = PP({ color: '#dff4ff', transmission: 0.95, roughness: 0.05, thickness: 0.3, ior: 1.33 });
+    const waterMat = P({ color: '#cfeeff', transparent: true, opacity: 0.55, roughness: 0.05, metalness: 0.1 });
     this.proto.water = () => {
       const g = new THREE.Group();
       g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.42, 20), waterMat));
@@ -133,7 +132,7 @@ export class Entities {
     this.proto.jogger = () => {
       const src = this.joggers[ji++ % this.joggers.length];
       const o = SkeletonUtils.clone(src.scene);
-      o.traverse((c) => { const m = c as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.frustumCulled = false; } });
+      o.traverse((c) => { const m = c as THREE.Mesh; if (m.isMesh) { m.castShadow = false; m.frustumCulled = false; } });
       (o as any).__clips = src.animations;
       return o;
     };
@@ -141,7 +140,7 @@ export class Entities {
 
   private withHalo(g: THREE.Group, color: string) {
     const wrap = new THREE.Group();
-    g.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = true; });
+    g.traverse((o) => { if ((o as THREE.Mesh).isMesh) o.castShadow = false; });
     g.name = 'body';
     wrap.add(g);
     const halo = new THREE.Mesh(this.haloGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6 }));

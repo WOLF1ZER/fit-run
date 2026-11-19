@@ -19,7 +19,7 @@ const COMBO_LABELS: [number, string][] = [[35, 'INSANE!'], [20, 'PERFECT'], [10,
 export class Engine {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(52, 1, 0.1, 3000);
+  private camera = new THREE.PerspectiveCamera(52, 1, 0.1, 900);
   private clock = new THREE.Clock();
   private world = new World();
   private player = new Player();
@@ -29,6 +29,7 @@ export class Engine {
   private disposed = false;
   private quality: 'high' | 'low';
   private dpr: number;
+  private maxDpr: number;
   private fpsAcc = { t: 0, n: 0 };
 
   // run state
@@ -61,11 +62,14 @@ export class Engine {
   constructor(private canvas: HTMLCanvasElement) {
     const mobile = matchMedia('(pointer: coarse)').matches;
     this.quality = mobile ? 'low' : 'high';
-    this.dpr = Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2);
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    // pixel budget: rendering at 2x on a laptop/phone costs 4x the work for little visible gain
+    this.maxDpr = Math.min(window.devicePixelRatio || 1, mobile ? 1.25 : 1.5);
+    this.dpr = this.maxDpr;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.dpr < 1.5, powerPreference: 'high-performance', stencil: false });
+    canvas.addEventListener('webglcontextlost', this.onContextLost, false);
     this.renderer.setPixelRatio(this.dpr);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.AgXToneMapping;
     this.renderer.toneMappingExposure = 0.88;
     this.resize();
@@ -108,8 +112,17 @@ export class Engine {
     step(0.88, 'Joggers & snacks');
     await this.ents.init(this.world.mats);
     this.scene.add(this.ents.group);
-    // compile shaders up front so the first frames don't stutter
+    // warm-up: put one of every pickup/obstacle in view and render once, so all shaders and
+    // textures are on the GPU before the run (no mid-run stalls when joggers first appear)
+    step(0.95, 'Warming up');
+    const kinds = ['shake', 'water', 'banana', 'burger', 'soda'] as const;
+    kinds.forEach((k, i) => this.ents.spawnItem(k, i % 3, -6 - i * 2));
+    (['car', 'barrier', 'banner', 'jogger', 'jogger', 'jogger', 'jogger'] as const).forEach((k, i) => this.ents.spawnObstacle(k, i % 3, -14 - i * 4));
+    this.camera.position.set(0, 2.3, 3.3);
+    this.camera.lookAt(0, 1.2, -9);
     this.renderer.compile(this.scene, this.camera);
+    this.renderer.render(this.scene, this.camera);
+    this.ents.clear();
     step(1, 'Ready');
     this.toMenu();
     this.clock.start();
@@ -420,8 +433,8 @@ export class Engine {
     if (this.fpsAcc.t < 2) return;
     const fps = this.fpsAcc.n / this.fpsAcc.t;
     this.fpsAcc = { t: 0, n: 0 };
-    if (fps < 45 && this.dpr > 0.75) { this.dpr = Math.max(0.75, this.dpr - 0.25); this.renderer.setPixelRatio(this.dpr); this.resize(); }
-    else if (fps > 58 && this.dpr < Math.min(2, window.devicePixelRatio || 1)) { this.dpr = Math.min(window.devicePixelRatio || 1, this.dpr + 0.25); this.renderer.setPixelRatio(this.dpr); this.resize(); }
+    if (fps < 50 && this.dpr > 0.6) { this.dpr = Math.max(0.6, this.dpr - 0.2); this.renderer.setPixelRatio(this.dpr); this.resize(); }
+    else if (fps > 58 && this.dpr < this.maxDpr) { this.dpr = Math.min(this.maxDpr, this.dpr + 0.1); this.renderer.setPixelRatio(this.dpr); this.resize(); }
   }
 
   private loop = () => {
@@ -447,10 +460,34 @@ export class Engine {
     return { tris: i.triangles, calls: i.calls, dpr: this.dpr, distance: this.distance, stamina: this.stamina, hydration: this.hydration, level: this.level, items: this.ents.items.length, obstacles: this.ents.obstacles.length, inShade: this.inShade, speed: this.speed };
   }
 
+  private onContextLost = (e: Event) => {
+    // the browser took the GPU away (driver reset / out of graphics memory): stop and offer a reload
+    e.preventDefault();
+    this.disposed = true;
+    cancelAnimationFrame(this.raf);
+    hud.set({ phase: 'error', loadLabel: 'The browser reset the graphics. Tap to reload.' });
+  };
+
   dispose() {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.resize);
+    this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
+    // free every GPU resource, then release the WebGL context itself (dev reloads otherwise pile up contexts)
+    const textures = new Set<THREE.Texture>();
+    this.scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.geometry) m.geometry.dispose();
+      const mats = m.material ? (Array.isArray(m.material) ? m.material : [m.material]) : [];
+      for (const mat of mats) {
+        for (const v of Object.values(mat)) if (v && (v as THREE.Texture).isTexture) textures.add(v as THREE.Texture);
+        mat.dispose();
+      }
+    });
+    textures.forEach((t) => t.dispose());
+    this.scene.environment?.dispose();
     this.renderer.dispose();
+    this.renderer.forceContextLoss();
   }
+
 }
