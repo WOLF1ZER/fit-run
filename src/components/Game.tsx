@@ -16,6 +16,7 @@ export default function Game() {
     engineRef.current = engine;
     (window as any).__fitrun = engine; // handy for debugging / automated tests
     (window as any).__fitrunHud = hud;
+    if (location.search.includes('debug')) import('three').then((T) => ((window as any).__THREE = T)); // for lighting / concept tests only
     (window as any).__fitrunAudio = { music, unlockAudio, setAppVisible };
     engine.load().catch((e) => {
       console.error(e);
