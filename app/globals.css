@@ -71,3 +71,7 @@ h2 { margin: 0; font-size: clamp(30px, 7vw, 52px); font-weight: 900; }
   .stats { grid-template-columns: repeat(2, 1fr); }
 }
 
+
+.mute { position: absolute; z-index: 5; pointer-events: auto; left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 42px; height: 42px;
+  border-radius: 50%; border: 1px solid rgba(255,255,255,.3); background: rgba(10,12,18,.55); font-size: 18px; cursor: pointer; }
+@media (max-width: 640px) { .hud .mute { bottom: auto; top: 96px; left: 12px; } }

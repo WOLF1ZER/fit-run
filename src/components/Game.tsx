@@ -3,6 +3,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { Engine } from '@/game/engine';
 import { hud } from '@/game/store';
+import { music, setAppVisible, unlockAudio } from '@/game/audio';
 import { Hud } from './Hud';
 
 export default function Game() {
@@ -15,6 +16,7 @@ export default function Game() {
     engineRef.current = engine;
     (window as any).__fitrun = engine; // handy for debugging / automated tests
     (window as any).__fitrunHud = hud;
+    (window as any).__fitrunAudio = { music, unlockAudio, setAppVisible };
     engine.load().catch((e) => {
       console.error(e);
       hud.set({ loadLabel: 'Could not load the game. Please reload.' });
@@ -23,6 +25,7 @@ export default function Game() {
     // keyboard
     const onKey = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
+      unlockAudio();
       const phase = hud.get().phase;
       if ((phase === 'menu' || phase === 'over') && (k === 'enter' || k === ' ')) { engine.start(); e.preventDefault(); return; }
       if (k === 'arrowleft' || k === 'a') engine.input('left');
@@ -35,7 +38,7 @@ export default function Game() {
     };
     // swipes + taps
     let sx = 0, sy = 0, st = 0, fired = false;
-    const down = (e: PointerEvent) => { sx = e.clientX; sy = e.clientY; st = performance.now(); fired = false; };
+    const down = (e: PointerEvent) => { unlockAudio(); sx = e.clientX; sy = e.clientY; st = performance.now(); fired = false; };
     const move = (e: PointerEvent) => {
       if (fired || !st) return;
       const dx = e.clientX - sx, dy = e.clientY - sy;
@@ -45,11 +48,13 @@ export default function Game() {
       else engine.input(dy < 0 ? 'jump' : 'slide');
     };
     const up = () => { if (!fired && st && performance.now() - st < 300) engine.input('tap'); st = 0; };
-    const vis = () => engine.pause(document.hidden);
+    // leaving the app pauses the run and freezes all sound; coming back resumes the music
+    const vis = () => { engine.pause(document.hidden); setAppVisible(!document.hidden); };
     window.addEventListener('keydown', onKey);
     window.addEventListener('pointerdown', down);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pagehide', () => setAppVisible(false));
     document.addEventListener('visibilitychange', vis);
     return () => {
       window.removeEventListener('keydown', onKey);

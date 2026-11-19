@@ -6,7 +6,7 @@ import { Player } from './player';
 import { Entities, type ItemKind, type ObstacleKind } from './entities';
 import { growthForLevel, BEAST_K } from './growth';
 import { hud, loadProfile, saveProfile, type Pop } from './store';
-import { sfx, unlockAudio } from './audio';
+import { sfx, unlockAudio, music } from './audio';
 import { ASSET } from './materials';
 
 // ---- tuning ----
@@ -151,6 +151,7 @@ export class Engine {
     this.ents.clear();
     this.player.reset();
     this.player.heading = 0; // face the camera on the start screen, city behind
+    music.setIntensity(0);
     hud.set({ phase: 'menu', stats: null, best: this.profile.best });
   }
 
@@ -167,6 +168,7 @@ export class Engine {
     this.player.reset();
     this.player.setGrowth(growthForLevel(this.level), true);
     this.player.startRunning();
+    music.setIntensity(1);
     if (this.profile.lastDay !== today) {
       const y = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
       this.profile.streak = this.profile.lastDay === y ? this.profile.streak + 1 : 1;
@@ -178,6 +180,7 @@ export class Engine {
 
   private gameOver() {
     sfx.over();
+    music.setIntensity(0);
     this.player.idle();
     const dist = Math.round(this.distance);
     const newBest = dist > this.profile.best;
@@ -368,6 +371,7 @@ export class Engine {
     this.player.update(dt, this.speed, true);
 
     // timers
+    music.setIntensity(this.beast > 0 ? 2 : 1);
     this.heavy = Math.max(0, this.heavy - dt);
     if (this.beast > 0) {
       this.beast -= dt;

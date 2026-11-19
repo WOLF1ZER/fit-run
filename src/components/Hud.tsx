@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { HudState } from '@/game/store';
+import { muted as initialMuted, setMuted, unlockAudio } from '@/game/audio';
 
 const fmtKm = (m: number) => (m / 1000).toFixed(2);
 
@@ -24,6 +25,11 @@ export function Hud({ state: s, onStart, onResume }: { state: HudState; onStart:
     return () => window.removeEventListener('beforeinstallprompt', h);
   }, []);
   const stop = (e: React.PointerEvent) => e.stopPropagation();
+  const [mute, setMute] = useState(initialMuted);
+  const muteBtn = (
+    <button className="mute" aria-label={mute ? 'Sound on' : 'Sound off'} onPointerDown={stop}
+      onClick={() => { unlockAudio(); setMuted(!mute); setMute(!mute); }}>{mute ? '🔇' : '🔊'}</button>
+  );
 
   if (s.phase === 'error') {
     return (
@@ -48,6 +54,7 @@ export function Hud({ state: s, onStart, onResume }: { state: HudState; onStart:
   if (s.phase === 'menu') {
     return (
       <div className="overlay menu">
+        {muteBtn}
         <h1 className="logo">FIT<span>RUN</span></h1>
         <p className="tagline">Run the city. Grab the shakes. Grow.</p>
         <button className="cta" onPointerDown={stop} onClick={onStart}>TAP TO RUN</button>
@@ -68,6 +75,7 @@ export function Hud({ state: s, onStart, onResume }: { state: HudState; onStart:
   return (
     <>
       <div className="hud">
+        {muteBtn}
         <div className="tl">
           <b>{s.speedKmh} km/h</b>
           <span>{fmtKm(s.distance)} km · PR {fmtKm(s.best)} km</span>
