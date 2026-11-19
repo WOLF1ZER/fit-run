@@ -27,3 +27,11 @@ and the location changes every km: Palm Boulevard → Beach Promenade → Downto
 npm install
 npm run dev
 ```
+
+## Test
+Browser tests (Playwright) live in [`tests/`](tests/README.md): game rules, crashes, UI, offline play, districts, freezes, battery use and music.
+```bash
+npm run build
+cd tests && npm install && npx playwright install chromium
+npm test
+```

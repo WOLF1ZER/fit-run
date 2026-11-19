@@ -1,0 +1,12 @@
+{
+  "name": "fit-run-tests",
+  "private": true,
+  "description": "Browser tests for FIT RUN (Playwright). See README.md.",
+  "scripts": {
+    "test": "node run.cjs",
+    "test:all": "node run.cjs all"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
