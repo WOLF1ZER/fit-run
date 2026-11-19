@@ -62,14 +62,14 @@ h2 { margin: 0; font-size: clamp(30px, 7vw, 52px); font-weight: 900; }
 
 /* ---------------- menu bar ---------------- */
 .menubar { position: absolute; left: 0; right: 0; top: 0; pointer-events: none; display: grid; align-items: center; gap: 18px;
-  grid-template-columns: auto minmax(260px, 440px) auto auto; justify-content: space-between;
+  grid-template-columns: 170px minmax(260px, 440px) 150px 44px; justify-content: space-between;
   padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
   background: linear-gradient(180deg, rgba(20,17,15,.5), rgba(20,17,15,.22) 70%, rgba(20,17,15,0)); }
-.mb-stats, .mb-right { display: flex; flex-direction: column; gap: 2px; }
+.mb-stats, .mb-right { display: flex; flex-direction: column; gap: 2px; min-width: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mb-stats b { font-size: 28px; font-weight: 900; line-height: 1; } .mb-stats small { font-size: 13px; font-weight: 700; opacity: .8; }
 .mb-right { text-align: right; } .mb-right b { font-size: 22px; line-height: 1.1; }
 .mb-stats span, .mb-right span { font-size: 11px; letter-spacing: .12em; color: var(--muted); font-weight: 700; }
-.mb-right em { font-style: normal; } .mb-right .sun { color: #ffb36b; } .mb-right .shade { color: #8fe3b0; }
+.mb-right em { font-style: normal; display: inline-block; width: 4.6em; text-align: left; } .mb-right .sun { color: #ffb36b; } .mb-right .shade { color: #8fe3b0; }
 .menubar .row { margin-bottom: 5px; } .menubar .row:last-child { margin-bottom: 0; }
 .icon-btn { pointer-events: auto; width: 44px; height: 44px; border-radius: 14px; border: 1px solid rgba(255,255,255,.18); background: rgba(20,17,15,.35);
   color: #fff; font-size: 16px; font-weight: 900; letter-spacing: -2px; cursor: pointer; display: grid; place-items: center; backdrop-filter: blur(6px); }
@@ -78,7 +78,7 @@ h2 { margin: 0; font-size: clamp(30px, 7vw, 52px); font-weight: 900; }
 
 /* phones: compact two-row bar at the top, below the status bar / notch */
 @media (max-width: 760px), (pointer: coarse) and (orientation: portrait) {
-  .menubar { grid-template-columns: 1fr auto auto; grid-template-areas: "stats right pause" "bars bars bars"; gap: 8px 12px;
+  .menubar { grid-template-columns: 1fr 132px 44px; grid-template-areas: "stats right pause" "bars bars bars"; gap: 8px 12px;
     padding: max(12px, calc(env(safe-area-inset-top) + 6px)) max(14px, env(safe-area-inset-right)) 12px max(14px, env(safe-area-inset-left));
     background: linear-gradient(180deg, rgba(20,17,15,.5), rgba(20,17,15,.22)); border-bottom: 1px solid rgba(255,255,255,.08);
     border-radius: 0 0 18px 18px; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
@@ -118,3 +118,5 @@ h2 { margin: 0; font-size: clamp(30px, 7vw, 52px); font-weight: 900; }
 .with-icon { display: inline-flex; align-items: center; gap: 10px; }
 .menu-item svg { opacity: .85; }
 .icon-btn { letter-spacing: 0; }
+
+.row-label { font-variant-numeric: tabular-nums; }
