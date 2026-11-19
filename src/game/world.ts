@@ -8,6 +8,7 @@ import {
 
 export const LANES = [-2.5, 0, 2.5];
 export const CHUNK = 60; // metres of street per recycled block
+const BEHIND = 30; // metres of street kept behind the player
 const NUM_CHUNKS = 5; // 300 m of street exists at any time (the haze hides the rest)
 const SUN_SIDE = 1; // the sun is on the +x side, alleys there let light cut across the road
 
@@ -155,7 +156,7 @@ export class World {
     onProgress(0.6, 'Palms & buildings');
     for (let i = 0; i < NUM_CHUNKS; i++) {
       const c = this.buildChunk(1000 + i * 77);
-      c.group.position.z = -i * CHUNK;
+      c.group.position.z = BEHIND - i * CHUNK; // the first block starts behind the player, so the start screen never sees the street end
       this.group.add(c.group);
       this.chunks.push(c);
     }
@@ -166,7 +167,7 @@ export class World {
   update(dz: number) {
     for (const c of this.chunks) {
       c.group.position.z += dz;
-      if (c.group.position.z > CHUNK * 1.2) c.group.position.z -= NUM_CHUNKS * CHUNK;
+      if (c.group.position.z > CHUNK + BEHIND) c.group.position.z -= NUM_CHUNKS * CHUNK; // always ≥ BEHIND metres of street behind the player
     }
   }
 
