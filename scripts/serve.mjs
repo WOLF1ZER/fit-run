@@ -9,6 +9,8 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
 const port = Number(process.env.PORT || 3000);
 http.createServer((req, res) => {
   let p = decodeURIComponent((req.url || '/').split('?')[0]);
+  // behave like Vercel: the 404 page itself is not directly reachable
+  if (p === '/404.html') { res.writeHead(404); return res.end('not found'); }
   let f = path.join(ROOT, p);
   if (!f.startsWith(ROOT)) { res.writeHead(403); return res.end(); }
   if (fs.existsSync(f) && fs.statSync(f).isDirectory()) f = path.join(f, 'index.html');
