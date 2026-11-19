@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { HudState } from '@/game/store';
+import { MAX_LEVEL } from '@/game/engine';
 import { CloseIcon, HomeIcon, MusicIcon, PauseIcon, PlayIcon, RestartIcon, SettingsIcon, SoundIcon, VibrateIcon } from './Icons';
 import { settings as initialSettings, updateSettings, unlockAudio, type SoundSettings } from '@/game/audio';
 
@@ -141,7 +142,7 @@ export function Hud({ state: s, actions }: { state: HudState; actions: HudAction
           <div className="bars">
             <Bar label="⚡ STAMINA" value={s.stamina} kind="stamina" warn={s.stamina < 25} />
             <Bar label="💧 HYDRATION" value={s.hydration} kind="water" warn={s.lowWater} />
-            <Bar label={`💪 FITNESS LV ${s.level}`} value={s.xp * 100} kind="fit" />
+            <Bar label={s.maxed ? '💪 FITNESS MAX' : `💪 FITNESS LV ${s.level}`} value={s.xp * 100} kind={s.maxed ? 'fit max' : 'fit'} />
           </div>
           <div className="mb-right">
             <b>🥤 {s.shakes}</b>
@@ -175,7 +176,7 @@ export function Hud({ state: s, actions }: { state: HudState; actions: HudAction
               <div className="pause-stats">
                 <div><b>{fmtKm(s.distance)}</b><span>km</span></div>
                 <div><b>{s.shakes}</b><span>shakes</span></div>
-                <div><b>LV {s.level}</b><span>fitness</span></div>
+                <div><b>{s.maxed ? 'MAX' : `LV ${s.level}`}</b><span>fitness</span></div>
               </div>
               <button className="cta" onPointerDown={stop} onClick={actions.resume}><span className="with-icon"><PlayIcon />RESUME</span></button>
               <button className="menu-item" onPointerDown={stop} onClick={() => setShowSettings(true)}><SettingsIcon />Settings</button>
@@ -192,7 +193,7 @@ export function Hud({ state: s, actions }: { state: HudState; actions: HudAction
           <div className="stats">
             <div><b>{fmtKm(st.distance)}</b><span>km</span></div>
             <div><b>{st.shakes}</b><span>shakes</span></div>
-            <div><b>LV {st.level}</b><span>fitness</span></div>
+            <div><b>{st.level >= MAX_LEVEL ? 'MAX' : `LV ${st.level}`}</b><span>fitness</span></div>
             <div><b>{st.kcal}</b><span>kcal</span></div>
           </div>
           <p className="muted">PR {fmtKm(st.best)} km</p>

@@ -18,6 +18,9 @@ const LANE_CHANGE_TIME = 0.38; // seconds a player needs to see and dodge into t
 const SECOND_WIND_TIME = 3.2;
 const SECOND_WIND_TAPS = 12;
 const xpForLevel = (lvl: number) => 3 + lvl; // shakes needed to go from lvl to lvl+1
+export const MAX_LEVEL = 40; // fitness tops out here: the bar shows MAX
+const LEVEL_SPEED_CAP = 20; // levels above this add no more speed
+const MAX_SPEED = 34; // absolute top speed (≈ 47 km/h on the HUD), Beast Mode included
 const COMBO_LABELS: [number, string][] = [[35, 'INSANE!'], [20, 'PERFECT'], [10, 'GREAT'], [5, 'NICE']];
 
 export class Engine {
@@ -263,15 +266,21 @@ export class Engine {
     if (kind === 'shake') {
       this.shakes++;
       this.shakeStreak++;
-      this.xp++;
       this.stamina = Math.min(100, this.stamina + 5);
-      this.popup('+1 💪 +5 ⚡', '#ff8a5a');
-      if (this.xp >= xpForLevel(this.level)) {
+      if (this.level >= MAX_LEVEL) {
+        // maxed out: shakes still heal a little and give points instead of XP
+        this.bonus += 50;
+        this.popup('MAX +50 +5 ⚡', '#ffd23f');
+      } else {
+        this.xp++;
+        this.popup('+1 💪 +5 ⚡', '#ff8a5a');
+      }
+      if (this.level < MAX_LEVEL && this.xp >= xpForLevel(this.level)) {
         this.xp = 0;
         this.level++;
         sfx.levelUp();
         this.player.setGrowth(this.beast > 0 ? BEAST_K : growthForLevel(this.level));
-        this.popup(`LEVEL ${this.level}`, '#ffd23f', true, 0.5, 0.3);
+        this.popup(this.level >= MAX_LEVEL ? 'MAX FITNESS!' : `LEVEL ${this.level}`, '#ffd23f', true, 0.5, 0.3);
         hud.set({ levelUp: performance.now() });
       }
       if (this.shakeStreak >= BEAST_STREAK && this.beast <= 0) {
@@ -372,8 +381,8 @@ export class Engine {
     }
     this.t += dt;
     // speed
-    const base = 9.5 + 8.5 * (1 - Math.exp(-this.distance / 1200)) + this.level * 0.25;
-    const target = base * (this.heavy > 0 ? 0.82 : 1) * (this.player.stumble > 0 ? 0.55 : 1) * (this.beast > 0 ? 1.45 : 1);
+    const base = 9.5 + 8.5 * (1 - Math.exp(-this.distance / 1200)) + Math.min(this.level, LEVEL_SPEED_CAP) * 0.25;
+    const target = Math.min(MAX_SPEED, base * (this.heavy > 0 ? 0.82 : 1) * (this.player.stumble > 0 ? 0.55 : 1) * (this.beast > 0 ? 1.45 : 1));
     this.speed += (target - this.speed) * Math.min(1, dt * 2.5);
     const dz = this.speed * dt;
     this.distance += dz;
@@ -468,7 +477,7 @@ export class Engine {
       hud.set({
         speedKmh: Math.round(10 + this.speed * 1.1),
         distance: this.distance,
-        stamina: this.stamina, hydration: this.hydration, level: this.level, xp: this.xp / xpForLevel(this.level), shakes: this.shakes,
+        stamina: this.stamina, hydration: this.hydration, level: this.level, maxed: this.level >= MAX_LEVEL, xp: this.level >= MAX_LEVEL ? 1 : this.xp / xpForLevel(this.level), shakes: this.shakes,
         bpm: Math.round(120 + this.speed * 2 + (100 - this.stamina) * 0.3 + (this.beast > 0 ? 20 : 0)),
         combo: this.combo, comboLabel: this.comboLabel(), beast: this.beast, heavy: this.heavy, inShade: this.inShade, lowWater: this.hydration < 25,
       });

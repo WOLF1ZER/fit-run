@@ -32,6 +32,7 @@ export interface HudState {
   hydration: number; // 0..100
   level: number;
   xp: number; // 0..1 progress inside the level
+  maxed: boolean;
   shakes: number;
   bpm: number;
   combo: number;
@@ -62,6 +63,7 @@ const initial: HudState = {
   hydration: 100,
   level: 1,
   xp: 0,
+  maxed: false,
   shakes: 0,
   bpm: 72,
   combo: 0,
