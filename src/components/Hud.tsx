@@ -2,9 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import type { HudState } from '@/game/store';
-import { muted as initialMuted, setMuted, unlockAudio } from '@/game/audio';
+import { settings as initialSettings, updateSettings, unlockAudio, type SoundSettings } from '@/game/audio';
 
 const fmtKm = (m: number) => (m / 1000).toFixed(2);
+const stop = (e: React.PointerEvent) => e.stopPropagation();
+
+export interface HudActions {
+  start: () => void;
+  pause: () => void;
+  resume: () => void;
+  menu: () => void;
+}
 
 function Bar({ label, value, kind, warn }: { label: string; value: number; kind: string; warn?: boolean }) {
   return (
@@ -17,19 +25,66 @@ function Bar({ label, value, kind, warn }: { label: string; value: number; kind:
   );
 }
 
-export function Hud({ state: s, onStart, onResume }: { state: HudState; onStart: () => void; onResume: () => void }) {
+function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button className={`toggle ${on ? 'on' : ''}`} onPointerDown={stop} onClick={() => onChange(!on)} role="switch" aria-checked={on}>
+      <span>{label}</span>
+      <i><b /></i>
+    </button>
+  );
+}
+
+function Slider({ value, disabled, onChange, label }: { value: number; disabled: boolean; onChange: (v: number) => void; label: string }) {
+  return (
+    <input className="slider" type="range" min={0} max={100} value={Math.round(value * 100)} disabled={disabled} aria-label={label}
+      onPointerDown={stop} onChange={(e) => onChange(Number(e.target.value) / 100)} />
+  );
+}
+
+/** Sound & feel settings, used in the pause menu and from the start screen. */
+function Settings() {
+  const [s, setS] = useState<SoundSettings>({ ...initialSettings });
+  const set = (patch: Partial<SoundSettings>) => { unlockAudio(); updateSettings(patch); setS((o) => ({ ...o, ...patch })); };
+  return (
+    <div className="settings">
+      <div className="set-row">
+        <Toggle label="🎵 Music" on={s.music} onChange={(v) => set({ music: v })} />
+        <Slider label="Music volume" value={s.musicVol} disabled={!s.music} onChange={(v) => set({ musicVol: v })} />
+      </div>
+      <div className="set-row">
+        <Toggle label="🔊 Sound effects" on={s.sfx} onChange={(v) => set({ sfx: v })} />
+        <Slider label="Effects volume" value={s.sfxVol} disabled={!s.sfx} onChange={(v) => set({ sfxVol: v })} />
+      </div>
+      <div className="set-row">
+        <Toggle label="📳 Vibration" on={s.vibration} onChange={(v) => set({ vibration: v })} />
+      </div>
+    </div>
+  );
+}
+
+function Sheet({ title, children, onClose }: { title: string; children: React.ReactNode; onClose?: () => void }) {
+  return (
+    <div className="sheet-backdrop" onPointerDown={stop}>
+      <div className="sheet" role="dialog" aria-label={title}>
+        <div className="sheet-head">
+          <h3>{title}</h3>
+          {onClose && <button className="icon-btn" aria-label="Close" onPointerDown={stop} onClick={onClose}>✕</button>}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function Hud({ state: s, actions }: { state: HudState; actions: HudActions }) {
   const [install, setInstall] = useState<any>(null);
+  const [showSettings, setShowSettings] = useState(false);
   useEffect(() => {
     const h = (e: Event) => { e.preventDefault(); setInstall(e); };
     window.addEventListener('beforeinstallprompt', h);
     return () => window.removeEventListener('beforeinstallprompt', h);
   }, []);
-  const stop = (e: React.PointerEvent) => e.stopPropagation();
-  const [mute, setMute] = useState(initialMuted);
-  const muteBtn = (
-    <button className="mute" aria-label={mute ? 'Sound on' : 'Sound off'} onPointerDown={stop}
-      onClick={() => { unlockAudio(); setMuted(!mute); setMute(!mute); }}>{mute ? '🔇' : '🔊'}</button>
-  );
+  useEffect(() => { if (s.phase !== 'paused' && s.phase !== 'menu') setShowSettings(false); }, [s.phase]);
 
   if (s.phase === 'error') {
     return (
@@ -54,44 +109,48 @@ export function Hud({ state: s, onStart, onResume }: { state: HudState; onStart:
   if (s.phase === 'menu') {
     return (
       <div className="overlay menu">
-        {muteBtn}
+        <button className="icon-btn corner" aria-label="Settings" onPointerDown={stop} onClick={() => setShowSettings(true)}>⚙</button>
         <h1 className="logo">FIT<span>RUN</span></h1>
         <p className="tagline">Run the city. Grab the shakes. Grow.</p>
-        <button className="cta" onPointerDown={stop} onClick={onStart}>TAP TO RUN</button>
+        <button className="cta" onPointerDown={stop} onClick={actions.start}>TAP TO RUN</button>
         {s.best > 0 && <p className="muted">Best: {fmtKm(s.best)} km</p>}
         <ul className="howto">
-          <li><b>←  →</b> change lane</li>
-          <li><b>↑</b> jump · <b>↓</b> slide</li>
+          <li><b>←  →</b> change lane · <b>↑</b> jump · <b>↓</b> slide</li>
           <li>🥤 shakes grow you · 💧 water · 🍌 energy · 🍔🥤 junk drains you</li>
           <li>☀ sun dries you out — run in the shade</li>
           <li>💥 a crash costs ⅓ of your stamina · 9 shakes in a row = BEAST</li>
         </ul>
         {install && <button className="ghost" onPointerDown={stop} onClick={() => install.prompt()}>Install app</button>}
+        {showSettings && <Sheet title="Settings" onClose={() => setShowSettings(false)}><Settings /></Sheet>}
       </div>
     );
   }
 
   const st = s.stats;
+  const playing = s.phase === 'running';
   return (
     <>
       <div className="hud">
-        {muteBtn}
-        <div className="tl">
-          <b>{s.speedKmh} km/h</b>
-          <span>{fmtKm(s.distance)} km · PR {fmtKm(s.best)} km</span>
+        {/* menu bar: across the top on computers, docked at the bottom on phones */}
+        <div className="menubar">
+          <div className="mb-stats">
+            <b>{s.speedKmh}<small> km/h</small></b>
+            <span>{fmtKm(s.distance)} km · PR {fmtKm(s.best)}</span>
+          </div>
+          <div className="bars">
+            <Bar label="⚡ STAMINA" value={s.stamina} kind="stamina" warn={s.stamina < 25} />
+            <Bar label="💧 HYDRATION" value={s.hydration} kind="water" warn={s.lowWater} />
+            <Bar label={`💪 FITNESS LV ${s.level}`} value={s.xp * 100} kind="fit" />
+          </div>
+          <div className="mb-right">
+            <b>🥤 {s.shakes}</b>
+            <span>❤ {s.bpm} · <em className={s.inShade ? 'shade' : 'sun'}>{s.inShade ? 'SHADE' : 'SUN'}</em></span>
+          </div>
+          <button className="icon-btn pause-btn" aria-label="Pause" disabled={!playing} onPointerDown={stop} onClick={actions.pause}>❚❚</button>
         </div>
-        <div className="bars">
-          <Bar label="⚡ STAMINA" value={s.stamina} kind="stamina" warn={s.stamina < 25} />
-          <Bar label="💧 HYDRATION" value={s.hydration} kind="water" warn={s.lowWater} />
-          <Bar label={`💪 FITNESS LV ${s.level}`} value={s.xp * 100} kind="fit" />
-        </div>
-        <div className="tr">
-          <b>🥤 {s.shakes}</b>
-          <span>❤ {s.bpm} BPM</span>
-          <span className={s.inShade ? 'shade' : 'sun'}>{s.inShade ? '🌴 SHADE' : '☀ SUN'}</span>
-        </div>
-        {s.phase === 'running' && s.beast > 0 && <div className="beast">BEAST MODE <small>{s.beast.toFixed(1)}s · SMASH EVERYTHING</small></div>}
-        {s.phase === 'running' && s.heavy > 0 && <div className="heavy">🍔 HEAVY {s.heavy.toFixed(1)}s</div>}
+
+        {playing && s.beast > 0 && <div className="beast">BEAST MODE <small>{s.beast.toFixed(1)}s · SMASH EVERYTHING</small></div>}
+        {playing && s.heavy > 0 && <div className="heavy">🍔 HEAVY {s.heavy.toFixed(1)}s</div>}
         {s.hint && <div className="hint">{s.hint}</div>}
         {s.pops.map((p) => (
           <div key={p.id} className={`pop ${p.big ? 'big' : ''}`} style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, color: p.color }}>{p.text}</div>
@@ -109,10 +168,21 @@ export function Hud({ state: s, onStart, onResume }: { state: HudState; onStart:
       )}
 
       {s.phase === 'paused' && (
-        <div className="overlay">
-          <h2>PAUSED</h2>
-          <button className="cta" onPointerDown={stop} onClick={onResume}>RESUME</button>
-        </div>
+        <Sheet title={showSettings ? 'Settings' : 'Paused'} onClose={showSettings ? () => setShowSettings(false) : undefined}>
+          {showSettings ? <Settings /> : (
+            <div className="pause-menu">
+              <div className="pause-stats">
+                <div><b>{fmtKm(s.distance)}</b><span>km</span></div>
+                <div><b>{s.shakes}</b><span>shakes</span></div>
+                <div><b>LV {s.level}</b><span>fitness</span></div>
+              </div>
+              <button className="cta" onPointerDown={stop} onClick={actions.resume}>▶ RESUME</button>
+              <button className="menu-item" onPointerDown={stop} onClick={() => setShowSettings(true)}>⚙ Settings</button>
+              <button className="menu-item" onPointerDown={stop} onClick={actions.start}>↻ Restart run</button>
+              <button className="menu-item" onPointerDown={stop} onClick={actions.menu}>⌂ Main menu</button>
+            </div>
+          )}
+        </Sheet>
       )}
 
       {s.phase === 'over' && st && (
@@ -125,7 +195,8 @@ export function Hud({ state: s, onStart, onResume }: { state: HudState; onStart:
             <div><b>{st.kcal}</b><span>kcal</span></div>
           </div>
           <p className="muted">PR {fmtKm(st.best)} km</p>
-          <button className="cta" onPointerDown={stop} onClick={onStart}>RUN AGAIN</button>
+          <button className="cta" onPointerDown={stop} onClick={actions.start}>RUN AGAIN</button>
+          <button className="ghost" onPointerDown={stop} onClick={actions.menu}>Main menu</button>
         </div>
       )}
     </>

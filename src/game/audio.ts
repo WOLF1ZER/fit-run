@@ -2,9 +2,24 @@
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null; // sound effects
 let musicBus: GainNode | null = null; // background track
-const MUTE_KEY = 'fitrun.muted';
-export let muted = (() => { try { return localStorage.getItem(MUTE_KEY) === '1'; } catch { return false; } })();
-const SFX_VOL = 0.5, MUSIC_VOL = 0.3;
+
+// ---- player settings (saved on the device)
+export interface SoundSettings { music: boolean; musicVol: number; sfx: boolean; sfxVol: number; vibration: boolean }
+const SETTINGS_KEY = 'fitrun.settings.v1';
+export const settings: SoundSettings = (() => {
+  const d: SoundSettings = { music: true, musicVol: 0.6, sfx: true, sfxVol: 0.8, vibration: true };
+  try { return { ...d, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch { return d; }
+})();
+const musicGain = () => (settings.music ? 0.5 * settings.musicVol : 0);
+const sfxGain = () => (settings.sfx ? 0.6 * settings.sfxVol : 0);
+export function updateSettings(patch: Partial<SoundSettings>) {
+  Object.assign(settings, patch);
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* private mode */ }
+  if (ctx && master && musicBus) {
+    master.gain.setTargetAtTime(sfxGain(), ctx.currentTime, 0.05);
+    musicBus.gain.setTargetAtTime(musicGain(), ctx.currentTime, 0.05);
+  }
+}
 
 export function unlockAudio() {
   if (!ctx) {
@@ -15,22 +30,14 @@ export function unlockAudio() {
     comp.threshold.value = -14; comp.ratio.value = 4;
     comp.connect(ctx.destination);
     master = ctx.createGain();
-    master.gain.value = muted ? 0 : SFX_VOL;
+    master.gain.value = sfxGain();
     master.connect(comp);
     musicBus = ctx.createGain();
-    musicBus.gain.value = muted ? 0 : MUSIC_VOL;
+    musicBus.gain.value = musicGain();
     musicBus.connect(comp);
     music.start();
   }
   if (ctx.state === 'suspended' && !document.hidden) ctx.resume();
-}
-export function setMuted(m: boolean) {
-  muted = m;
-  try { localStorage.setItem(MUTE_KEY, m ? '1' : '0'); } catch { /* private mode */ }
-  if (ctx && master && musicBus) {
-    master.gain.setTargetAtTime(m ? 0 : SFX_VOL, ctx.currentTime, 0.05);
-    musicBus.gain.setTargetAtTime(m ? 0 : MUSIC_VOL, ctx.currentTime, 0.05);
-  }
 }
 /** Leaving the app/tab freezes all sound; coming back continues exactly where it was. */
 export function setAppVisible(visible: boolean) {
@@ -62,7 +69,7 @@ function noise(dur: number, vol = 0.4, lp = 800) {
   s.start();
 }
 const SCALE = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
-const vib = (ms: number | number[]) => { try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
+const vib = (ms: number | number[]) => { if (!settings.vibration) return; try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
 
 export const sfx = {
   /** pickup blip — climbs a pentatonic scale as the combo grows */

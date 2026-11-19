@@ -69,7 +69,12 @@ export default function Game() {
   return (
     <main className="game">
       <canvas ref={canvasRef} className="canvas" />
-      <Hud state={state} onStart={() => engineRef.current?.start()} onResume={() => engineRef.current?.pause(false)} />
+      <Hud state={state} actions={{
+        start: () => engineRef.current?.start(),
+        pause: () => engineRef.current?.pause(true),
+        resume: () => engineRef.current?.pause(false),
+        menu: () => engineRef.current?.toMenu(),
+      }} />
     </main>
   );
 }

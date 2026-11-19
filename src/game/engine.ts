@@ -36,6 +36,7 @@ export class Engine {
   private maxDpr: number;
   private fpsAcc = { t: 0, n: 0 };
   private frame = 0;
+  private ro: ResizeObserver;
 
   // run state
   private t = 0;
@@ -75,6 +76,8 @@ export class Engine {
     this.dpr = this.maxDpr;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.dpr < 1.5, powerPreference: 'high-performance', stencil: false });
     canvas.addEventListener('webglcontextlost', this.onContextLost, false);
+    this.ro = new ResizeObserver(() => this.resize());
+    this.ro.observe(canvas);
     this.renderer.setPixelRatio(this.dpr);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -149,6 +152,7 @@ export class Engine {
 
   // ------------------------------------------------------------------ phases
   toMenu() {
+    this.clock.getDelta();
     this.ents.clear();
     this.player.reset();
     this.player.heading = 0; // face the camera on the start screen, city behind
@@ -513,6 +517,7 @@ export class Engine {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.resize);
+    this.ro.disconnect();
     this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
     // free every GPU resource, then release the WebGL context itself (dev reloads otherwise pile up contexts)
     const textures = new Set<THREE.Texture>();
