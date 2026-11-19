@@ -11,7 +11,7 @@ export type ObstacleKind = 'car' | 'barrier' | 'banner' | 'jogger';
 export interface Item { kind: ItemKind; obj: THREE.Object3D; body: THREE.Object3D; lane: number; z: number; prevZ: number; y: number; active: boolean; spin: number }
 export interface Obstacle {
   kind: ObstacleKind; obj: THREE.Object3D; lane: number; z: number; prevZ: number; len: number; halfW: number; active: boolean; hit: boolean; passed: boolean;
-  mixer?: THREE.AnimationMixer; vz: number; fly?: THREE.Vector3; spinFly?: number;
+  mixer?: THREE.AnimationMixer; vz: number; fly?: THREE.Vector3; spinFly?: number; spinSide?: number; spinYaw?: number;
 }
 
 const P = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial(o);
@@ -339,6 +339,7 @@ export class Entities {
       const run = clips.find((c) => /run/i.test(c.name)) ?? clips[0];
       if (run) o.mixer.clipAction(run).play();
       o.mixer.update(Math.random());
+      o.mixer.timeScale = 1;
     } else {
       const i = this.carIdx++;
       const vkey = kind === 'car' ? (i % 3 === 0 ? 'car1' : 'car0') : kind;
@@ -366,18 +367,27 @@ export class Entities {
     }
     for (const o of this.obstacles) {
       o.prevZ = o.z;
-      o.z += dz + o.vz * dt;
+      o.z += dz + o.vz * dt + (o.fly ? o.fly.z * dt : 0); // knocked objects fly on ahead of you
       o.obj.position.z = o.z;
       if (o.mixer) o.mixer.update(dt);
-      if (o.fly) { // smashed by Beast Mode
-        o.obj.position.addScaledVector(o.fly, dt);
+      if (o.fly) { // knocked away: crash or Beast Mode smash
+        o.obj.position.x += o.fly.x * dt;
+        o.obj.position.y += o.fly.y * dt;
         o.fly.y -= 18 * dt;
+        if (o.obj.position.y < 0 && o.fly.y < 0) { // hits the road: bounce, skid, lose energy
+          o.obj.position.y = 0;
+          o.fly.y *= -0.35; o.fly.x *= 0.6; o.fly.z *= 0.6;
+          o.spinFly = (o.spinFly ?? 4) * 0.5; o.spinSide = (o.spinSide ?? 0) * 0.5;
+          if (Math.abs(o.fly.y) < 1.2) { o.fly.y = 0; o.spinFly = 0; o.spinSide = 0; o.spinYaw = (o.spinYaw ?? 0) * 0.6; }
+        }
         o.obj.rotation.x += (o.spinFly ?? 4) * dt;
+        o.obj.rotation.z += (o.spinSide ?? 0) * dt;
+        o.obj.rotation.y += (o.spinYaw ?? 0) * dt;
       }
     }
     // recycle what fell behind the camera
     this.items = this.items.filter((it) => { if (it.z > 8 || !it.active) { this.give(it.kind, it.obj); return false; } return true; });
-    this.obstacles = this.obstacles.filter((o) => { if (o.z > 12 || o.obj.position.y < -6) { o.fly = undefined; this.give(o.kind, o.obj); return false; } return true; });
+    this.obstacles = this.obstacles.filter((o) => { if (o.z > 12 || o.z < -260 || Math.abs(o.obj.position.x) > 30) { o.fly = undefined; this.give(o.kind, o.obj); return false; } return true; });
     this.sync();
   }
 

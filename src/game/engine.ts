@@ -3,7 +3,7 @@ import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { World, SUN_DIR, LANES } from './world';
 import { Player } from './player';
-import { Entities, type ItemKind, type ObstacleKind } from './entities';
+import { Entities, type ItemKind, type ObstacleKind, type Obstacle } from './entities';
 import { growthForLevel, BEAST_K } from './growth';
 import { hud, loadProfile, saveProfile, type Pop } from './store';
 import { sfx, unlockAudio, music } from './audio';
@@ -344,6 +344,24 @@ export class Engine {
     }
   }
 
+/** Sends an obstacle flying: away from the runner, sideways off his line, spinning. Heavier things fly less. */
+  private knock(o: Obstacle, px: number, power: number) {
+    const mass = o.kind === 'car' ? 2.6 : o.kind === 'jogger' ? 1.3 : o.kind === 'banner' ? 1.2 : 1;
+    const side = Math.sign(LANES[o.lane] - px) || (Math.random() < 0.5 ? -1 : 1);
+    const p = power / mass, r = Math.random;
+    if (o.kind === 'car') {
+      // a car doesn't flip from a runner: it lurches forward with a small hop and slews sideways
+      o.fly = new THREE.Vector3(side * (1.5 + r()) * power, 1.6 * power, -(this.speed * 0.6 + 8) * power);
+      o.spinFly = -0.4 * power; o.spinSide = 0; o.spinYaw = side * (1.2 + r()) * power;
+    } else {
+      o.fly = new THREE.Vector3(side * (3 + r() * 3) * p, (6 + r() * 3) * p, -(this.speed * 0.45 + 6) * p);
+      o.spinFly = -(4 + r() * 4) * p;
+      o.spinSide = -side * (1.5 + r() * 2.5) * p;
+      o.spinYaw = 0;
+    }
+    if (o.mixer) o.mixer.timeScale = 0.25; // the jogger stops running mid-air
+  }
+
   private crash() {
     this.stamina = Math.max(0, this.stamina - CRASH_COST);
     this.combo = 0; this.shakeStreak = 0;
@@ -439,10 +457,10 @@ export class Engine {
       if (o.kind === 'banner') blocks = pb.y1 > 1.25; // slide under it
       if (!blocks) continue;
       o.hit = true;
+      // every touch knocks the object away; Beast Mode just hits much harder
+      this.knock(o, pb.x, this.beast > 0 ? 1.6 : 1);
       if (this.player.invuln > 0) continue;
       if (this.beast > 0) {
-        o.fly = new THREE.Vector3((Math.random() - 0.5) * 6, 9, -14);
-        o.spinFly = 6;
         this.bonus += 150; sfx.smash(); this.popup('SMASH +150', '#ffb21a');
         this.shakeCam = 0.25;
         continue;
