@@ -57,11 +57,22 @@ const remapV = (g: THREE.BufferGeometry, r?: [number, number]) => {
   return g;
 };
 
+const WHITE = new THREE.Color('#ffffff');
+function setColor(g: THREE.BufferGeometry, c: THREE.Color) {
+  const n = g.attributes.position.count, a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+}
+
 export class World {
   group = new THREE.Group();
   private chunks: Chunk[] = [];
   mats!: Record<string, any>;
   private noShadow = new Set<THREE.Material>();
+  private keepMat = new Set<THREE.Material>(); // plain materials that must stay separate (custom shaders)
+  private vcMatte = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 });
+  private vcMetal = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.65 });
+  private vcGlow = new THREE.MeshBasicMaterial({ vertexColors: true });
   private props: Record<string, THREE.Object3D> = {};
   private ray = new THREE.Ray();
   private tmpBox = new THREE.Box3();
@@ -82,7 +93,11 @@ export class World {
     ]);
     for (const m of [asp, pav, curb]) heatify(m);
     const stuccoTints = ['#ffffff', '#f2c9b8', '#e8d2a8', '#cfe0e2', '#f6efe2'];
-    const walls = [stA, stB, stC, ...stuccoTints.map((c, i) => { const m = [stA, stB, stC][i % 3].clone(); m.color.set(c); return m; })];
+    // 3 wall materials; the tinted variants reuse them with a per-vertex tint (no extra draw calls)
+    const baseWalls = [stA, stB, stC];
+    for (const m of baseWalls) { (m as any).userData.tint = m.color.clone(); m.color.set('#ffffff'); m.vertexColors = true; }
+    const walls = [...baseWalls.map((m) => ({ mat: m, tint: (m as any).userData.tint as THREE.Color })),
+      ...stuccoTints.map((c, i) => ({ mat: baseWalls[i % 3], tint: new THREE.Color(c) }))];
     onProgress(0.3, 'Building the street');
 
     const glassTowerTex = canvasTex(512, 512, (g) => {
@@ -135,6 +150,7 @@ export class World {
     this.mats.awnings = mk(Array.from({ length: 4 }, (_, i) => awningTexture(i)), (t) => P({ map: t, side: THREE.DoubleSide, roughness: 0.85 }));
     this.mats.graffiti = mk(Array.from({ length: 8 }, (_, i) => graffitiTexture(i, rnd)), (t) => decal(t));
     // materials that never need to cast shadows (ground, paint, decals, glass)
+    this.keepMat = new Set<THREE.Material>([this.mats.paintW, this.mats.glass]); // heat shader / reflective glass
     this.noShadow = new Set<THREE.Material>([asp, pav, curb, this.mats.paintW, this.mats.grime, this.mats.signs.mat, this.mats.ads.mat, this.mats.graffiti.mat, this.mats.glass, this.mats.shop, this.mats.frame, this.mats.lamp]);
 
     onProgress(0.45, 'Street furniture');
@@ -201,7 +217,7 @@ export class World {
       batch.get(mat)!.push(clean(geo));
     };
     // box with world-scale UVs (ts = texture size in metres)
-    const wbox = (w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number, ts = 2) => {
+    const wbox = (w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number, ts = 2, tint?: THREE.Color) => {
       const g = new THREE.BoxGeometry(w, h, d);
       const uv = g.attributes.uv, p = g.attributes.position, n = g.attributes.normal;
       for (let i = 0; i < uv.count; i++) {
@@ -209,6 +225,7 @@ export class World {
         const X = p.getX(i) + x, Y = p.getY(i) + y, Z = p.getZ(i) + z;
         if (ax > 0.5) uv.setXY(i, Z / ts, Y / ts); else if (ay > 0.5) uv.setXY(i, X / ts, Z / ts); else uv.setXY(i, X / ts, Y / ts);
       }
+      if (tint) setColor(g, tint);
       add(g, mat, x, y, z);
     };
     const facePlane = (w: number, h: number, mat: THREE.Material, x: number, y: number, z: number, s: number, region?: [number, number]) =>
@@ -232,8 +249,9 @@ export class World {
         if (w < 6) break;
         const floors = 2 + Math.floor(rnd() * 3), h = floors * 3.4 + 0.8, d = 14, x = s * (13 + d / 2);
         const isBrick = rnd() < 0.3;
-        const wall: THREE.Material = isBrick ? M.brick : M.walls[Math.floor(rnd() * M.walls.length)];
-        wbox(d, h, w, wall, x, h / 2, z - w / 2, isBrick ? 2.4 : 3);
+        const wallPick = M.walls[Math.floor(rnd() * M.walls.length)];
+        const wall: THREE.Material = isBrick ? M.brick : wallPick.mat;
+        wbox(d, h, w, wall, x, h / 2, z - w / 2, isBrick ? 2.4 : 3, isBrick ? undefined : wallPick.tint);
         if (s === SUN_SIDE) boxes.push(new THREE.Box3(new THREE.Vector3(x - d / 2, 0, z - w), new THREE.Vector3(x + d / 2, h + 0.5, z)));
         const fx = s * 13;
         // shopfront
@@ -262,7 +280,7 @@ export class World {
           wbox(0.2, 0.1, 1.6, M.frame, fx - s * 0.08, wy - 0.8, wz, 1);
           if (rnd() < 0.3) wbox(0.55, 0.4, 0.7, M.ac, fx - s * 0.3, wy - 0.6, wz + 0.2, 1);
         }
-        wbox(0.5, 0.5, w, M.walls[0], fx - s * 0.1, h + 0.2, z - w / 2, 1);
+        wbox(0.5, 0.5, w, M.walls[0].mat, fx - s * 0.1, h + 0.2, z - w / 2, 1, M.walls[0].tint);
         // fire escape on brick
         if (isBrick) for (let f = 1; f < floors; f++) {
           const fy = f * 3.4 + 1.0, ez = z - w * 0.35;
@@ -324,7 +342,24 @@ export class World {
     }
     for (let z = -8; z > -CHUNK; z -= 23) put('water_manhole_cover', (rnd() - 0.5) * 5, 0.004, z, rnd() * 6);
 
+    // plain single-colour materials (frames, poles, tyres, AC units, lamps…) collapse into 3 shared
+    // vertex-coloured ones: far fewer draw calls per street block, same look
+    const merged = new Map<THREE.Material, THREE.BufferGeometry[]>();
     for (const [mat, geos] of batch) {
+      const m = mat as THREE.MeshStandardMaterial;
+      const plain = m.isMeshStandardMaterial && !m.map && !m.transparent && !m.vertexColors && !this.keepMat.has(m);
+      let target: THREE.Material = mat;
+      if (plain) {
+        const glow = m.emissiveIntensity > 0.3 && m.emissive.getHex() !== 0;
+        target = glow ? this.vcGlow : m.metalness >= 0.5 ? this.vcMetal : this.vcMatte;
+        for (const g of geos) setColor(g, glow ? m.emissive.clone().lerp(m.color, 0.3) : m.color);
+      } else if ((mat as THREE.MeshStandardMaterial).vertexColors) {
+        for (const g of geos) if (!g.attributes.color) setColor(g, WHITE);
+      }
+      if (!merged.has(target)) merged.set(target, []);
+      merged.get(target)!.push(...geos);
+    }
+    for (const [mat, geos] of merged) {
       const mesh = new THREE.Mesh(mergeGeometries(geos, false), mat);
       mesh.castShadow = !this.noShadow.has(mat) && !(mat as THREE.MeshStandardMaterial).transparent;
       mesh.receiveShadow = true;

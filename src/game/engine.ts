@@ -133,6 +133,8 @@ export class Engine {
     const kinds = ['shake', 'water', 'banana', 'burger', 'soda'] as const;
     kinds.forEach((k, i) => this.ents.spawnItem(k, i % 3, -6 - i * 2));
     (['car', 'barrier', 'banner', 'jogger', 'jogger', 'jogger', 'jogger'] as const).forEach((k, i) => this.ents.spawnObstacle(k, i % 3, -14 - i * 4));
+    this.ents.spawnObstacle('car', 1, -40); // both car shapes
+    this.ents.sync();
     this.camera.position.set(0, 2.3, 3.3);
     this.camera.lookAt(0, 1.2, -9);
     this.renderer.compile(this.scene, this.camera);
