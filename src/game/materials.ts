@@ -62,6 +62,28 @@ export async function pbr(id: string, repeat: number, extra: THREE.MeshStandardM
 
 // Sunlit ground glows hot; shade stays cool. The danger zones read at a glance.
 /** How strongly sunlit ground glows hot (1 at sunset, lower at other times of day, 0 at night). */
+const depthMats = new Map<string, THREE.MeshDepthMaterial>();
+/**
+ * Gives every shadow caster a depth material shared only with casters of the same kind.
+ * three.js otherwise draws all casters with ONE depth material and copies each object's map/side onto it,
+ * rebuilding its shader key only when instancing/skinning flips between consecutive draws, so which shader
+ * variants exist depends on draw order: a new mix of objects in the shadow box compiled a new one mid-run
+ * (a ~50 ms freeze). With one material per kind, each compiles once, during the loading warm-up.
+ */
+export function stableShadow(root: THREE.Object3D) {
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || !m.castShadow || Array.isArray(m.material)) return;
+    const mat = m.material as THREE.MeshStandardMaterial;
+    // alpha-tested / displaced materials need their own textures in the depth pass, so they get their own
+    const own = mat.alphaTest > 0 || (!!mat.displacementMap && mat.displacementScale !== 0);
+    const key = [(m as THREE.InstancedMesh).isInstancedMesh ? 'i' : '', (m as THREE.SkinnedMesh).isSkinnedMesh ? 's' : '', mat.side, mat.shadowSide, mat.map ? 'm' : '', own ? mat.uuid : ''].join('|');
+    let d = depthMats.get(key);
+    if (!d) { d = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); depthMats.set(key, d); }
+    m.customDepthMaterial = d;
+  });
+}
+
 export const HEAT = { value: 1 };
 
 export function heatify(m: THREE.Material, lo = 0.12, hi = 0.4) {

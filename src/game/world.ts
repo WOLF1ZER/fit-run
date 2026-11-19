@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import {
-  ASSET, adTexture, awningTexture, canvasTex, frondTexture, graffitiTexture, grimeTexture, heatify, makeRng, pbr, plateTexture, signTexture,
+  ASSET, adTexture, awningTexture, canvasTex, frondTexture, graffitiTexture, grimeTexture, heatify, makeRng, pbr, plateTexture, signTexture, stableShadow,
 } from './materials';
 
 export const LANES = [-2.5, 0, 2.5];
@@ -491,6 +491,7 @@ export class World {
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = !this.noShadow.has(mat) && !(mat as THREE.MeshStandardMaterial).transparent;
       mesh.receiveShadow = true;
+      stableShadow(mesh);
       mesh.matrixAutoUpdate = false;
       mesh.updateMatrix();
       group.add(mesh);

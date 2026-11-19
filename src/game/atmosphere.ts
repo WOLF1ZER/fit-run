@@ -108,14 +108,18 @@ export class Atmosphere {
     // night: dark dome + stars, the city lights up
     (this.dome.material as THREE.MeshBasicMaterial).opacity = this.night;
     (this.stars.material as THREE.PointsMaterial).opacity = this.night;
-    this.dome.visible = this.stars.visible = this.night > 0.01;
+    this.dome.visible = this.stars.visible = this.night > 0.01 || this.warming;
     this.sky.visible = this.night < 0.99;
     this.glow.lamp.setScalar(1 + 2.2 * this.night);
     for (const m of this.glow.signs) m.emissiveIntensity = mix(m.userData.dayGlow ?? 0.06, m.userData.nightGlow ?? 1.2, this.night);
     for (const m of this.glow.towers) m.emissiveIntensity = 0.9 * this.night;
-    for (const m of this.glow.pools) m.opacity = 0.85 * this.night;
+    for (const m of this.glow.pools) { m.opacity = 0.85 * this.night; m.visible = this.night > 0.01 || this.warming; } // not drawn at all by day
     this.rim.intensity = 0.9 * this.night;
   }
+
+  private warming = false;
+  /** During the loading warm-up render everything night-only is shown once, so its shaders are compiled before play. */
+  warm(on: boolean) { this.warming = on; this.set(this.tod); }
 
   /** Moves the warm lamp light to the street lamp nearest the runner (lamps every 20 m on both sides). */
   followLamps(lampZ: number, px: number) {

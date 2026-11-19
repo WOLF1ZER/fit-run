@@ -7,7 +7,7 @@ import { Entities, type ItemKind, type ObstacleKind, type Obstacle } from './ent
 import { growthForLevel, BEAST_K } from './growth';
 import { hud, loadProfile, saveProfile, type Pop } from './store';
 import { sfx, unlockAudio, music } from './audio';
-import { ASSET } from './materials';
+import { ASSET, stableShadow } from './materials';
 
 // ---- tuning ----
 const BEAST_TIME = 8;
@@ -130,10 +130,19 @@ export class Engine {
     this.camera.position.set(0, 2.3, 3.3);
     this.camera.lookAt(0, 1.2, -9);
     this.world.warmup(true); // the other locations' blocks + ocean, so their shaders compile now too
+    this.atmo.warm(true); // night sky, stars and lamp pools too
     this.renderer.compile(this.scene, this.camera);
+    // compile() skips the shadow pass, and the sun's shadow box only sees what is near the runner, so a
+    // kind of caster first drawn there mid-run compiled its depth shader then (a ~50 ms freeze ~100 m in).
+    // Each caster kind has its own depth material (stableShadow); draw every caster once, unculled.
+    stableShadow(this.scene); // catch-all for any caster not set up where it was made
+    const unculled: THREE.Object3D[] = [];
+    this.scene.traverse((o) => { if (o.castShadow && o.frustumCulled) { o.frustumCulled = false; unculled.push(o); } });
     this.renderer.shadowMap.needsUpdate = true;
     this.renderer.render(this.scene, this.camera);
+    for (const o of unculled) o.frustumCulled = true;
     this.world.warmup(false);
+    this.atmo.warm(false);
     this.ents.clear();
     step(1, 'Ready');
     this.toMenu();

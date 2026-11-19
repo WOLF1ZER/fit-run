@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { ASSET } from './materials';
+import { ASSET, stableShadow } from './materials';
 import { LANES } from './world';
 import { applyGrowth } from './growth';
 
@@ -40,6 +40,7 @@ export class Player {
         m.frustumCulled = false;
       }
     });
+    stableShadow(this.model);
     this.root.add(this.model);
     this.mixer = new THREE.AnimationMixer(this.model);
     for (const clip of gltf.animations) {

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { ASSET, canvasTex, labelTexture } from './materials';
+import { ASSET, canvasTex, labelTexture, stableShadow } from './materials';
 import { buildCarParts, LANES } from './world';
 
 export type ItemKind = 'shake' | 'water' | 'banana' | 'burger' | 'soda';
@@ -69,6 +69,9 @@ class Variant {
       im.frustumCulled = false; // instances move every frame; the per-geometry bound would be wrong
       im.castShadow = shadow;
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      // colour buffer from the start (white = no tint): created lazily by setColorAt it switched shaders mid-run
+      im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 3).fill(1), 3);
+      stableShadow(im);
       parent.add(im);
       this.meshes.push(im);
     }
