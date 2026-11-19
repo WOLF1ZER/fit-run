@@ -44,6 +44,10 @@ export class Engine {
   private maxDpr: number;
   private fpsAcc = { t: 0, n: 0 };
   private frame = 0;
+  /** time saved up between menu frames (menus draw at half rate) */
+  private idleAcc = 0;
+  /** the paused picture must be drawn again (window resized, which clears the canvas) */
+  private redraw = true;
   private ro: ResizeObserver;
 
   // run state
@@ -156,6 +160,7 @@ export class Engine {
     this.camera.aspect = w / h;
     this.camera.fov = w < h ? 64 : 52; // portrait phones need a wider view
     this.camera.updateProjectionMatrix();
+    this.redraw = true;
   };
 
   // ------------------------------------------------------------------ phases
@@ -541,12 +546,35 @@ export class Engine {
   private loop = () => {
     if (this.disposed) return;
     this.raf = requestAnimationFrame(this.loop);
-    const dt = Math.min(0.05, this.clock.getDelta());
-    if (hud.get().phase !== 'paused') this.step(dt);
+    const raw = this.clock.getDelta();
+    const phase = hud.get().phase;
+    const playing = phase === 'running' || phase === 'secondwind';
     this.world.runJobs(this.quality === 'high' ? 5 : 3); // build the next location in small slices
-    this.adaptQuality(dt);
-    // shadows at half the frame rate: one less full scene pass every other frame
-    if ((++this.frame & 1) === 0) this.renderer.shadowMap.needsUpdate = true;
+    if (phase === 'paused') {
+      // nothing moves: keep showing the last picture instead of redrawing the same frame 60 times a second
+      this.fpsAcc = { t: 0, n: 0 };
+      if (!this.redraw) return;
+      this.redraw = false;
+      this.renderer.shadowMap.needsUpdate = true;
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+    this.redraw = true;
+    let dt = Math.min(0.05, raw);
+    if (!playing) {
+      // start / game-over screens: 30 frames a second is plenty for the idle runner, half the GPU work (less heat)
+      this.idleAcc += raw;
+      if (this.idleAcc < 1 / 31) return;
+      dt = Math.min(0.05, this.idleAcc);
+      this.idleAcc = 0;
+      this.fpsAcc = { t: 0, n: 0 }; // only judge resolution by real play
+      this.renderer.shadowMap.needsUpdate = true;
+    } else {
+      this.adaptQuality(dt);
+      // shadows at half the frame rate: one less full scene pass every other frame
+      if ((++this.frame & 1) === 0) this.renderer.shadowMap.needsUpdate = true;
+    }
+    this.step(dt);
     this.renderer.render(this.scene, this.camera);
   };
 
